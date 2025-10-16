@@ -1,0 +1,219 @@
+ALTER TABLE BatchJobHistory
+ADD InstanceId UNIQUEIDENTIFIER NULL,
+    CancelRequested BIT NOT NULL DEFAULT 0;
+
+
+var history = new BatchJobHistory
+{
+    BatchJobId = job.BatchJobId,
+    InstanceId = Guid.NewGuid(),
+    StartTime = DateTime.UtcNow,
+    Status = "Running"
+};
+await _historyRepo.AddAsync(history);
+await _historyRepo.SaveChangesAsync();
+
+
+if (await _historyRepo.IsCancelRequestedAsync(history.BatchJobHistoryId))
+{
+    await FileLogger.WriteAsync(_config, job.Name, history.InstanceId, "Cancelled by Web UI");
+    history.Status = "Cancelled";
+    history.EndTime = DateTime.UtcNow;
+    await _historyRepo.UpdateAsync(history);
+    await _historyRepo.SaveChangesAsync();
+    return;
+}
+
+
+public async Task<bool> IsCancelRequestedAsync(int historyId)
+{
+    var h = await _context.BatchJobHistory.FindAsync(historyId);
+    return h?.CancelRequested ?? false;
+}
+
+public async Task MarkCancelRequestedAsync(int batchJobId)
+{
+    var running = await _context.BatchJobHistory
+        .Where(h => h.BatchJobId == batchJobId && h.Status == "Running")
+        .OrderByDescending(h => h.StartTime)
+        .FirstOrDefaultAsync();
+
+    if (running != null)
+    {
+        running.CancelRequested = true;
+        await _context.SaveChangesAsync();
+    }
+}
+
+[HttpPost]
+public async Task<IActionResult> Stop(int id)
+{
+    await _historyRepo.MarkCancelRequestedAsync(id);
+    TempData["Message"] = $"Job {id} marked for cancellation.";
+    return RedirectToAction("Index");
+}
+
+
+namespace HRSCBatchJobService.Domain.Entities;
+
+public class BatchJobHistory
+{
+    public int BatchJobHistoryId { get; set; }
+    public int BatchJobId { get; set; }
+
+    // new: unique id to correlate a single run
+    public Guid? InstanceId { get; set; }
+
+    // existing
+    public string Status { get; set; } = string.Empty;
+    public DateTime StartTime { get; set; }
+    public DateTime? EndTime { get; set; }
+    public int? DurationMs { get; set; }
+    public string? ErrorMessage { get; set; }
+
+    // new: UI / Web can set this to request cancel; Worker reads it
+    public bool CancelRequested { get; set; } = false;
+}
+ modelBuilder.Entity<BatchJobHistory>(eb =>
+        {
+            eb.Property(e => e.InstanceId)
+              .HasColumnName("InstanceId")
+              .HasColumnType("uniqueidentifier")
+              .IsRequired(false);
+
+            eb.Property(e => e.CancelRequested)
+              .HasDefaultValue(false)
+              .HasColumnName("CancelRequested");
+        });
+
+
+using HRSCBatchJobService.Domain.Entities;
+using HRSCBatchJobService.DataAccess.Context;
+using Microsoft.EntityFrameworkCore;
+
+namespace HRSCBatchJobService.DataAccess.Repositories;
+
+public class BatchJobHistoryRepository : Repository<BatchJobHistory>
+{
+    private readonly HRSCContext _context;
+    public BatchJobHistoryRepository(HRSCContext context) : base(context)
+    {
+        _context = context;
+    }
+
+    /// <summary>
+    /// Create a new running history row and return the created entity (with generated id).
+    /// Caller should SaveChangesAsync after call if using the generic AddAsync; this method saves itself.
+    /// </summary>
+    public async Task<BatchJobHistory> CreateRunningHistoryAsync(int batchJobId, Guid instanceId)
+    {
+        var history = new BatchJobHistory
+        {
+            BatchJobId = batchJobId,
+            InstanceId = instanceId,
+            StartTime = DateTime.UtcNow,
+            Status = "Running",
+            CancelRequested = false
+        };
+
+        _context.BatchJobHistory.Add(history);
+        await _context.SaveChangesAsync();
+        return history;
+    }
+
+    /// <summary>
+    /// Find latest running history row for a given job (if any).
+    /// </summary>
+    public async Task<BatchJobHistory?> GetLatestRunningAsync(int batchJobId)
+    {
+        return await _context.BatchJobHistory
+            .Where(h => h.BatchJobId == batchJobId && h.Status == "Running")
+            .OrderByDescending(h => h.StartTime)
+            .FirstOrDefaultAsync();
+    }
+
+    /// <summary>
+    /// Mark cancel requested against the latest running row for this job.
+    /// Returns true if a running record was found and updated.
+    /// </summary>
+    public async Task<bool> MarkCancelRequestedForJobAsync(int batchJobId)
+    {
+        var running = await GetLatestRunningAsync(batchJobId);
+        if (running == null) return false;
+
+        running.CancelRequested = true;
+        // Optionally update a CancelRequestedAt column if you add one
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
+    /// <summary>
+    /// Check if cancel was requested for a specific history record.
+    /// </summary>
+    public async Task<bool> IsCancelRequestedAsync(int batchJobHistoryId)
+    {
+        var h = await _context.BatchJobHistory.FindAsync(batchJobHistoryId);
+        return h?.CancelRequested ?? false;
+    }
+
+    /// <summary>
+    /// Mark history row as completed/failed/cancelled and set EndTime and optional error.
+    /// </summary>
+    public async Task UpdateCompletionAsync(int historyId, string status, string? errorMessage = null)
+    {
+        var h = await _context.BatchJobHistory.FindAsync(historyId);
+        if (h == null) return;
+
+        h.Status = status;
+        h.EndTime = DateTime.UtcNow;
+        h.DurationMs = (int?) ( (h.EndTime - h.StartTime)?.TotalMilliseconds );
+        h.ErrorMessage = errorMessage;
+        h.CancelRequested = false;
+        await _context.SaveChangesAsync();
+    }
+}
+
+
+// before you start heavy work:
+var instanceId = Guid.NewGuid();
+var history = await _batchJobHistoryRepo.CreateRunningHistoryAsync(job.BatchJobId, instanceId);
+
+// save the history id for checks and for logs
+int historyId = history.BatchJobHistoryId;
+// pass historyId and instanceId into the job runner
+
+
+// example inside a loop in your job
+if (await _batchJobHistoryRepo.IsCancelRequestedAsync(historyId))
+{
+    await FileLogger.WriteAsync(_config, job.Name, instanceId, "Cancel requested from Web UI — stopping.");
+    await _batchJobHistoryRepo.UpdateCompletionAsync(historyId, "Cancelled", "Cancelled by user request");
+    return JobResult.Cancelled("Cancelled by user");
+}
+
+
+await _batchJobHistoryRepo.UpdateCompletionAsync(historyId, "Completed", null);
+await _batchJobHistoryRepo.UpdateCompletionAsync(historyId, "Failed", ex.Message);
+
+
+[HttpPost]
+public async Task<IActionResult> Stop(int batchJobId)
+{
+    var ok = await _batchJobHistoryRepo.MarkCancelRequestedForJobAsync(batchJobId);
+    TempData["Message"] = ok ? "Cancel request sent" : "No running instance found";
+    return RedirectToAction("Index");
+}
+
+
+[HttpPost]
+public async Task<IActionResult> StopHistory(int historyId)
+{
+    // mark specific history record cancel requested
+    var h = await _batchJobHistoryRepo.GetByIdAsync(historyId);
+    if (h != null && h.Status == "Running")
+    {
+        h.CancelRequested = true;
+        await _batchJobHistoryRepo.SaveChangesAsync();
+    }
+    return RedirectToAction("Index");
+}
