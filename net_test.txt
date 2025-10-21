@@ -1,0 +1,360 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+    
+namespace HRSCWinService.BusinessLogic
+{
+    public interface IHrscBatchJobBL
+    {
+        Task<int> RunBatchJob(CancellationToken cancellationToken = default);
+    }
+
+    public class HrscBatchJobBL : IHrscBatchJobBL
+    {
+        private readonly ILogger<HrscBatchJobBL> _logger;
+        private readonly IServiceProvider _serviceProvider;
+        private readonly IBatchJobsRepository _batchJobsRepo;
+        private readonly IBatchJobHistoryRepository _historyRepo;
+        private readonly int _maxParallel;
+        private readonly string _logContext = "HrscBatchJobBL";
+
+        public HrscBatchJobBL(
+            ILogger<HrscBatchJobBL> logger,
+            IServiceProvider serviceProvider,
+            IBatchJobsRepository batchJobsRepo,
+            IBatchJobHistoryRepository historyRepo,
+            // pass max parallel from configuration (e.g. 5)
+            int maxParallel = 5)
+        {
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+            _batchJobsRepo = batchJobsRepo ?? throw new ArgumentNullException(nameof(batchJobsRepo));
+            _historyRepo = historyRepo ?? throw new ArgumentNullException(nameof(historyRepo));
+            _maxParallel = Math.Max(1, maxParallel);
+        }
+
+        /// <summary>
+        /// Main entry to start due jobs. This method starts jobs (honours _maxParallel)
+        /// but does not block waiting for all to finish. Each job runs independently.
+        /// </summary>
+        public async Task<int> RunBatchJob(CancellationToken cancellationToken = default)
+        {
+            _logger.LogInformation("{Context} - Starting batch job processing", _logContext);
+
+            List<BatchJobs> jobs;
+            try
+            {
+                jobs = await _batchJobsRepo.GetDueJobsAsync(DateTime.UtcNow);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "{Context} - Failed to query due jobs", _logContext);
+                return -1;
+            }
+
+            if (jobs == null || jobs.Count == 0)
+            {
+                _logger.LogInformation("{Context} - No due jobs found", _logContext);
+                return 0;
+            }
+
+            var runningTasks = new List<Task>();
+
+            foreach (var job in jobs)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogInformation("{Context} - Cancellation requested, stopping start loop", _logContext);
+                    break;
+                }
+
+                try
+                {
+                    // Try to mark the job as running. If it returns false, skip starting it.
+                    var marked = await _batchJobsRepo.TryMarkJobRunningAsync(job.BatchJobId);
+                    if (!marked)
+                    {
+                        _logger.LogInformation("{Context}:{Job} - Skipped because already running", _logContext, job.Name);
+                        continue;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "{Context}:{Job} - Failed to mark job as running, skipping", _logContext, job.Name);
+                    continue;
+                }
+
+                // Start the job process (do not await here)
+                var task = Task.Run(() => ProcessJobAsync(job, cancellationToken), cancellationToken);
+                runningTasks.Add(task);
+
+                // Enforce rolling window: when we hit max parallel, wait for any to finish.
+                if (runningTasks.Count >= _maxParallel)
+                {
+                    try
+                    {
+                        var finished = await Task.WhenAny(runningTasks);
+                        // remove completed tasks from list
+                        runningTasks.RemoveAll(t => t.IsCompleted);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Task.WhenAny shouldn't throw normally, but log defensively.
+                        _logger.LogError(ex, "{Context} - Error while waiting for slot", _logContext);
+                        runningTasks.RemoveAll(t => t.IsCompleted);
+                    }
+                }
+            }
+
+            // Do not block waiting for all remaining tasks to finish (they may be long-running).
+            // Attach continuation handlers to log unobserved exceptions.
+            foreach (var t in runningTasks)
+            {
+                _ = t.ContinueWith(task =>
+                {
+                    if (task.IsFaulted)
+                    {
+                        _logger.LogError(task.Exception, "{Context} - Background job task faulted", _logContext);
+                    }
+                }, TaskContinuationOptions.OnlyOnFaulted);
+            }
+
+            _logger.LogInformation("{Context} - Started due jobs (count {Count}) - returning", _logContext, jobs.Count);
+            return 0;
+        }
+
+        /// <summary>
+        /// Processes a single job instance: creates history row, resolves job service, calls its Run,
+        /// updates completion and ensures IsRunning is cleared in finally.
+        /// This method runs async and should handle its own exceptions.
+        /// </summary>
+        private async Task ProcessJobAsync(BatchJobs job, CancellationToken ct)
+        {
+            Guid instanceId = Guid.NewGuid();
+            int historyId = 0;
+            Stopwatch sw = null;
+
+            try
+            {
+                // Create history entry
+                var history = await _historyRepo.CreateRunningHistoryAsync(job.BatchJobId, instanceId);
+                if (history == null)
+                {
+                    _logger.LogWarning("{Context}:{Job} - Could not create history, marking not running and returning", _logContext, job.Name);
+                    await _batchJobsRepo.MarkJobNotRunningAsync(job.BatchJobId);
+                    return;
+                }
+
+                historyId = history.Id;
+
+                sw = Stopwatch.StartNew();
+
+                // Resolve job service from DI using FQN
+                IBackgroundJobService jobService = null;
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(job.FullyQualifiedClassName))
+                    {
+                        var jobType = Type.GetType(job.FullyQualifiedClassName, throwOnError: false);
+                        if (jobType != null)
+                        {
+                            using var scope = _serviceProvider.CreateScope();
+                            jobService = scope.ServiceProvider.GetService(jobType) as IBackgroundJobService;
+                            if (jobService == null)
+                            {
+                                // maybe service registered as an interface; try resolving by name mapping or factory if you have one
+                                _logger.LogWarning("{Context}:{Job} - resolved type but not IBackgroundJobService", _logContext, job.Name);
+                            }
+                        }
+                    }
+
+                    // fallback: try resolving by a job factory or using a known mapping if Type.GetType fails
+                    if (jobService == null)
+                    {
+                        // example: try resolving default registered IBackgroundJobService keyed by job.BatchJobId or job.Name
+                        using var scope2 = _serviceProvider.CreateScope();
+                        var factory = scope2.ServiceProvider.GetService<IBackgroundJobFactory>();
+                        if (factory != null)
+                        {
+                            jobService = factory.GetServiceForJob(job);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "{Context}:{Job} - Error resolving job service", _logContext, job.Name);
+                }
+
+                if (jobService == null)
+                {
+                    sw?.Stop();
+                    await _historyRepo.UpdateCompletionAsync(historyId, "Failed", "Job service not found", sw?.ElapsedMilliseconds);
+                    _logger.LogWarning("{Context}:{Job} - Job service not available for {FQN}", _logContext, job.Name, job.FullyQualifiedClassName);
+                    return;
+                }
+
+                // Execute the job. The job implementation should accept cancellation token and respect it.
+                JobResult result;
+                try
+                {
+                    result = await jobService.Run(ct, historyId);
+                }
+                catch (OperationCanceledException)
+                {
+                    result = JobResult.Failed(sw?.Elapsed ?? TimeSpan.Zero, "Canceled");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "{Context}:{Job} - Exception from jobService.Run", _logContext, job.Name);
+                    result = JobResult.Failed(sw?.Elapsed ?? TimeSpan.Zero, ex.Message);
+                }
+
+                sw.Stop();
+
+                // Update history with completion status and any message/duration
+                var status = result != null && result.Success ? "Success" : "Failed";
+                await _historyRepo.UpdateCompletionAsync(historyId, status, result?.Message, sw.ElapsedMilliseconds);
+
+                // Optionally update run metadata in BatchJobs (NextRunDateTime, LastRunDateTime, etc)
+                try
+                {
+                    await _batchJobsRepo.UpdateAfterRunAsync(job.BatchJobId, result?.Success ?? false, DateTime.UtcNow);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "{Context}:{Job} - Failed to update job metadata after run", _logContext, job.Name);
+                }
+
+                _logger.LogInformation("{Context}:{Job} - Completed in {Ms}ms, Status: {Status}", _logContext, job.Name, sw.ElapsedMilliseconds, status);
+            }
+            catch (Exception ex)
+            {
+                sw?.Stop();
+                try
+                {
+                    if (historyId > 0)
+                        await _historyRepo.UpdateCompletionAsync(historyId, "Failed", ex.Message, sw?.ElapsedMilliseconds);
+                }
+                catch
+                {
+                    // swallow history update exceptions to avoid crashing finalizer
+                }
+
+                _logger.LogError(ex, "{Context}:{Job} - Unhandled exception in processing", _logContext, job.Name);
+            }
+            finally
+            {
+                // Always clear the IsRunning flag regardless of success/failure
+                try
+                {
+                    await _batchJobsRepo.MarkJobNotRunningAsync(job.BatchJobId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "{Context}:{Job} - Failed to mark job not running in finally", _logContext, job.Name);
+                }
+            }
+        }
+    }
+
+    //
+    // Interfaces & supporting contracts (minimal stubs so the above compiles; adapt to your real ones)
+    //
+    public interface IBatchJobsRepository
+    {
+        Task<List<BatchJobs>> GetDueJobsAsync(DateTime asOf);
+        Task<bool> TryMarkJobRunningAsync(int batchJobId);
+        Task MarkJobNotRunningAsync(int batchJobId);
+        Task UpdateAfterRunAsync(int batchJobId, bool success, DateTime runCompletedAt);
+    }
+
+    public interface IBatchJobHistoryRepository
+    {
+        Task<BatchJobHistory> CreateRunningHistoryAsync(int batchJobId, Guid instanceId);
+        Task UpdateCompletionAsync(int historyId, string status, string message = null, long? elapsedMs = null);
+        Task<bool> IsCancelRequestedAsync(int historyId);
+    }
+
+    public interface IBackgroundJobService
+    {
+        // Implemented by your job classes (BulkIngestion.cs, TermNoticeService.cs, etc.)
+        Task<JobResult> Run(CancellationToken ct, int historyId);
+    }
+
+    public interface IBackgroundJobFactory
+    {
+        IBackgroundJobService GetServiceForJob(BatchJobs job);
+    }
+
+    // DTOs based on your screenshots; adapt properties as per your domain classes
+    public class BatchJobs
+    {
+        public int BatchJobId { get; set; }
+        public string Name { get; set; } = null!;
+        public string FullyQualifiedClassName { get; set; } = null!;
+        public bool IsEnabled { get; set; }
+        public bool IsRunning { get; set; }
+        public DateTime? NextRunDateTime { get; set; }
+    }
+
+    public class BatchJobHistory
+    {
+        public int Id { get; set; }
+        public int BatchJobId { get; set; }
+        public DateTime StartTime { get; set; }
+        public DateTime? EndTime { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public Guid InstanceId { get; set; }
+        public bool CancelRequested { get; set; }
+    }
+
+    public class JobResult
+    {
+        public bool Success { get; set; }
+        public string? Message { get; set; }
+        public TimeSpan Duration { get; set; }
+
+        public static JobResult OK(TimeSpan duration, string? msg = null) =>
+            new JobResult { Success = true, Duration = duration, Message = msg };
+
+        public static JobResult Failed(TimeSpan duration, string? msg = null) =>
+            new JobResult { Success = false, Duration = duration, Message = msg };
+    }
+}
+-----------------
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+
+namespace HRSCWinService.Services
+{
+    public interface IHrscBatchJobService
+    {
+        Task<int> ProcessBatchJobs(CancellationToken ct);
+    }
+
+    public class HrscBatchJobService : IHrscBatchJobService
+    {
+        private readonly ILogger<HrscBatchJobService> _logger;
+        private readonly IHrscBatchJobBL _batchJobBL;
+
+        public HrscBatchJobService(ILogger<HrscBatchJobService> logger, IHrscBatchJobBL batchJobBL)
+        {
+            _logger = logger;
+            _batchJobBL = batchJobBL;
+        }
+
+        public async Task<int> ProcessBatchJobs(CancellationToken ct)
+        {
+            _logger.LogInformation("ProcessBatchJobs - Starting");
+            var result = await _batchJobBL.RunBatchJob(ct);
+            _logger.LogInformation("ProcessBatchJobs - Ended with result {Result}", result);
+            return result;
+        }
+    }
+}
