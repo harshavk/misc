@@ -1,67 +1,40 @@
-jira
-Jira Story
+using Microsoft.Extensions.Configuration;
+using Microsoft.Data.SqlClient;
 
-Title: Implement Generic Background Export Framework Using Channels to Process Large Reports Asynchronously
+// Load appsettings.json
+var config = new ConfigurationBuilder()
+    .AddJsonFile("appsettings.json", optional: false)
+    .Build();
 
-Story Description:
-As a Web Application User, I want to trigger large data exports (Excel/PDF) to be processed asynchronously in the background, so that I can download the generated file later without impacting web performance or facing timeouts.
+var connStr = config.GetConnectionString("DefaultConnection")!;
 
-Business Context / Problem Statement
+// Read keys from YOUR application's config file
+var targetConfig = new ConfigurationBuilder()
+    .AddJsonFile("appsettings.json", optional: false)
+    .AddJsonFile("appsettings.Development.json", optional: true)
+    .Build();
 
-Currently, large data exports executed directly through the MVC Web application cause performance issues, long wait times and request timeouts. This impacts user experience and application stability.
-We need a scalable & reusable background export mechanism to handle heavy report generation without affecting the main web request pipeline.
+// Flatten key-values
+var allKeys = targetConfig.AsEnumerable()
+    .Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && kv.Value is not null)
+    .ToList();
 
-Proposed Solution Summary
+Console.WriteLine($"Found {allKeys.Count} keys to insert…");
 
-Implement a generic export framework inside the Web MVC application using:
+// Insert all into DB (NO check, NO update)
+using var conn = new SqlConnection(connStr);
+await conn.OpenAsync();
 
-.NET Channels to queue export requests
+foreach (var kv in allKeys)
+{
+    var cmd = conn.CreateCommand();
+    cmd.CommandText = @"INSERT INTO AppConfigs (AppConfigName, AppConfigValue, ModifiedBy) 
+                        VALUES (@name, @value, @modifiedBy)";
+    cmd.Parameters.AddWithValue("@name", kv.Key);
+    cmd.Parameters.AddWithValue("@value", kv.Value ?? "");
+    cmd.Parameters.AddWithValue("@modifiedBy", "Migration");
 
-BackgroundService (ExportWorker) to process export jobs
+    await cmd.ExecuteNonQueryAsync();
+}
 
-Standardized parameters (fromDate, toDate, sampleId, reportType)
-
-Pluggable handlers (IExportHandler) to support multiple report types
-
-Persistent job tracking in DB with status updates
-
-UI screen to start export and download completed files
-
-This solution should be reusable by any module that needs offline exports.
-
-✅ Acceptance Criteria
-#	Acceptance Criteria
-1	User should be able to submit a report export request with: fromDate, toDate, sampleId, and reportType.
-2	Application must enqueue export jobs without blocking the UI thread.
-3	Export jobs must process in background using a Channel-based worker.
-4	Handler must run based on report type and generate file in configured storage path.
-5	Export job status must be stored in DB: Pending → Running → Completed/Failed.
-6	User must be able to see export history & download file once ready.
-7	Framework must support adding new report handlers with minimal code change.
-8	Should not impact main web request performance.
-9	Unit tests (xUnit) must be available for ExportManager, ExportWorker, and sample handler.
-🔧 Technical Tasks / Sub-Tasks
-Task #	Task Description	Est
-T1	Create ExportJob model & ExportDbContext for persisting export jobs	2h
-T2	Implement IExportHandler interface for standardized report generation	2h
-T3	Implement ExportManager to enqueue jobs to Channel	3h
-T4	Implement ExportChannel (Singleton)	1h
-T5	Implement ExportWorker (BackgroundService) to process jobs	4h
-T6	Store handler type & parameters in DB (serialized)	1h
-T7	Create sample UsersExportHandler for POC	2h
-T8	Implement MVC UI to trigger export & show job list with download link	4h
-T9	Add xUnit tests for Manager, Worker & Handler	3h
-T10	Deployment configuration & cleanup strategy for old files	2h
-
-Total Estimate: 24 hours (3 working days)
-
-🧪 Test Scenarios
-Scenario ID	Test Case	Expected Result
-TS01	Submit export request with valid params	Returns JobId and status Pending
-TS02	Worker picks job and processes	Status updates to Running and then Completed
-TS03	Download completed export	File downloads successfully
-TS04	Wrong reportType passed	Returns validation error
-TS05	Handler throws exception	Status becomes Failed and ErrorMessage logged
-TS06	Multiple parallel exports	Jobs processed respecting configured MaxParallel
-TS07	Stop & restart app	Worker resumes and processes pending jobs
-TS08	View export history screen	Latest export jobs visible with status & download link
+Console.WriteLine("✅ Insert completed successfully!");
