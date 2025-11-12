@@ -1,0 +1,235 @@
+@model List<Person>
+@{
+    Layout = null;
+}
+
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>DataTables - Excel style header filters (searchable)</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css" rel="stylesheet" />
+
+    <style>
+        .col-filter-btn {
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 6px;
+            color: #007bff;
+        }
+        .filter-dropdown {
+            position: absolute;
+            background: #fff;
+            border: 1px solid #ddd;
+            padding: 8px;
+            box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+            z-index: 9999;
+            max-height: 320px;
+            overflow: hidden;
+            min-width: 220px;
+        }
+        .filter-dropdown .select-all {
+            font-weight: 600;
+            margin-bottom: 6px;
+            display: block;
+        }
+        .filter-search {
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+            padding: 6px 8px;
+            margin-bottom: 6px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+        .filter-list {
+            max-height: 220px;
+            overflow-y: auto;
+            padding-right: 6px;
+        }
+        .filter-list label { display:block; margin-bottom:4px; }
+        th { position: relative; }
+    </style>
+</head>
+<body class="p-3">
+
+    <div class="container-fluid">
+        <h4>Client DataTable with Excel-like searchable header filters</h4>
+
+        <table id="myTable" class="display table table-bordered" style="width:100%">
+            <thead>
+                <tr>
+                    <th class="has-filter">Id <span class="col-filter-btn" title="Filter">&#x25BC;</span></th>
+                    <th class="has-filter">Name <span class="col-filter-btn" title="Filter">&#x25BC;</span></th>
+                    <th class="has-filter">City <span class="col-filter-btn" title="Filter">&#x25BC;</span></th>
+                    <th class="has-filter">Role <span class="col-filter-btn" title="Filter">&#x25BC;</span></th>
+                    <th class="has-filter">Status <span class="col-filter-btn" title="Filter">&#x25BC;</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in Model)
+                {
+                    <tr>
+                        <td>@p.Id</td>
+                        <td>@p.Name</td>
+                        <td>@p.City</td>
+                        <td>@p.Role</td>
+                        <td>@p.Status</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+
+    <script>
+        $(function () {
+            var table = $('#myTable').DataTable({
+                pageLength: 10,
+                order: []
+            });
+
+            function escapeRegex(text) {
+                return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+            }
+
+            var $currentDropdown = null;
+            var debounceTimer = null;
+
+            $('#myTable thead').on('click', '.col-filter-btn', function (e) {
+                e.stopPropagation();
+                if ($currentDropdown) { $currentDropdown.remove(); $currentDropdown = null; }
+
+                var $th = $(this).closest('th');
+                var colIndex = $th.index();
+                var column = table.column(colIndex);
+
+                var uniqueVals = column.data().toArray()
+                    .map(function (v) { return v === null || v === undefined ? '' : String(v); })
+                    .filter(function (v) { return v !== null; });
+
+                var uniq = Array.from(new Set(uniqueVals)).sort(function (a, b) {
+                    var na = parseFloat(a), nb = parseFloat(b);
+                    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+                    return a.localeCompare(b);
+                });
+
+                var $dropdown = $('<div class="filter-dropdown"></div>');
+                // Search box
+                var searchId = 'fs-' + Math.random().toString(36).substr(2, 9);
+                $dropdown.append('<input type="text" class="filter-search" placeholder="Type to filter..." id="' + searchId + '" />');
+
+                // Select all (affects currently visible items)
+                var selectAllId = 'sa-' + Math.random().toString(36).substr(2, 9);
+                $dropdown.append('<label class="select-all"><input type="checkbox" id="' + selectAllId + '" checked> Select / Clear Visible</label>');
+
+                var $list = $('<div class="filter-list"></div>');
+                uniq.forEach(function (val, i) {
+                    var safeId = 'f-' + colIndex + '-' + i + '-' + Math.random().toString(36).substr(2, 6);
+                    var display = val === '' ? '(blank)' : val;
+                    var $label = $('<label></label>');
+                    var $chk = $('<input type="checkbox" class="filter-item" checked />')
+                        .attr('data-value', val)
+                        .attr('id', safeId);
+                    $label.append($chk).append(' <span>' + $('<div>').text(display).html() + '</span>');
+                    $list.append($label);
+                });
+                $dropdown.append($list);
+
+                $('body').append($dropdown);
+                var thOffset = $th.offset();
+                $dropdown.css({
+                    top: thOffset.top + $th.outerHeight(),
+                    left: thOffset.left
+                });
+
+                $currentDropdown = $dropdown;
+
+                // Search/filter the checkbox list (debounced)
+                $('#' + searchId).on('keyup', function () {
+                    var q = $(this).val().trim().toLowerCase();
+
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(function () {
+                        $list.find('label').each(function () {
+                            var text = $(this).text().trim().toLowerCase();
+                            if (q === '' || text.indexOf(q) !== -1) {
+                                $(this).show();
+                            } else {
+                                $(this).hide();
+                            }
+                        });
+
+                        // Update select-all checkbox state based on visible items
+                        var $visible = $list.find('.filter-item:visible');
+                        var totalVisible = $visible.length;
+                        var checkedVisible = $visible.filter(':checked').length;
+                        $('#' + selectAllId).prop('checked', totalVisible > 0 && checkedVisible === totalVisible);
+                    }, 180);
+                });
+
+                // Select/Clear Visible
+                $dropdown.on('change', '#' + selectAllId, function () {
+                    var checked = $(this).is(':checked');
+                    // only affect visible items
+                    $list.find('label:visible .filter-item').prop('checked', checked).trigger('change');
+                });
+
+                // Individual checkbox change -> update column filter
+                $dropdown.on('change', '.filter-item', function () {
+                    // maintain select-all status but only vs visible
+                    var $visibleCheckboxes = $list.find('label:visible .filter-item');
+                    if ($visibleCheckboxes.length > 0) {
+                        var checkedCountVisible = $visibleCheckboxes.filter(':checked').length;
+                        $('#' + selectAllId).prop('checked', checkedCountVisible === $visibleCheckboxes.length);
+                    } else {
+                        $('#' + selectAllId).prop('checked', false);
+                    }
+
+                    // gather all checked values (including those currently hidden by search)
+                    var selected = $list.find('.filter-item:checked').map(function () {
+                        return $(this).attr('data-value');
+                    }).get();
+
+                    if (selected.length === 0) {
+                        column.search('', false, false).draw();
+                        return;
+                    }
+
+                    var parts = selected.map(function (s) {
+                        return '^' + escapeRegex(s) + '$';
+                    });
+                    var regex = parts.join('|');
+
+                    column.search(regex, true, false).draw();
+                });
+
+                // clicking inside dropdown shouldn't close it
+                $dropdown.on('click', function (ev) {
+                    ev.stopPropagation();
+                });
+
+                // close dropdown on outside click
+                $(document).one('click', function () {
+                    if ($currentDropdown) {
+                        $currentDropdown.remove();
+                        $currentDropdown = null;
+                    }
+                });
+
+                // close on scroll/resize
+                $(window).on('resize scroll', function () {
+                    if ($currentDropdown) {
+                        $currentDropdown.remove();
+                        $currentDropdown = null;
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
