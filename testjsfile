@@ -1,83 +1,158 @@
-// Put this after WorkflowReportModule.Init(); inside document.ready
-(function () {
-    var tableSelector = '#workflowReportDataTable';
-    var $table = $(tableSelector);
-    if (!$table.length) { console.warn('table not found', tableSelector); return; }
-
-    var table = $table.DataTable(); // assume already initialized
-
-    function escapeRegex(text) {
-        return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-    }
-
+// ----------------- paste this INSIDE dataTableParameters { ... } -----------------
+initComplete: function () {
+    var api = this.api();
+    var $table = $(api.table().node());
+    var $thead = $table.find('thead');
+    var table = api; // DataTables API
     var $currentDropdown = null;
     var debounceTimer = null;
     var closeHandler = null;
 
-    // Prevent header click/sort when user presses the small filter button (mousedown stops DataTables handlers)
-    $(document).on('mousedown.workflowFilter', tableSelector + ' thead .col-filter-btn', function (e) {
-        e.preventDefault();
-        // stopImmediatePropagation to try to block any other handlers attached to the same element
-        e.stopImmediatePropagation();
-        // also stop propagation so th click won't run
-        e.stopPropagation();
+    // Inject filter button into headers that have class 'has-filter'
+    $thead.find('th.has-filter').each(function () {
+        if (!$(this).find('.col-filter-btn').length) {
+            $(this).append(' <span class="col-filter-btn" title="Filter" style="cursor:pointer;font-size:12px;color:#007bff">&#x25BC;</span>');
+        }
     });
 
-    // Main click handler - create dropdown
-    $(document).on('click.workflowFilter', tableSelector + ' thead .col-filter-btn', function (e) {
+    // Prevent sorting when clicking the filter button by stopping mousedown propagation
+    $table.off('mousedown.workflowFilter', 'thead .col-filter-btn')
+          .on('mousedown.workflowFilter', 'thead .col-filter-btn', function (ev) {
+              ev.preventDefault();
+              try { ev.stopImmediatePropagation(); } catch (e) { }
+              ev.stopPropagation();
+          });
+
+    // main click handler for filter button (delegated on the table header)
+    $table.off('click.workflowFilter', 'thead .col-filter-btn')
+          .on('click.workflowFilter', 'thead .col-filter-btn', function (e) {
         e.preventDefault();
         e.stopPropagation();
 
-        // remove existing dropdown if any
-        if ($currentDropdown) {
-            $currentDropdown.remove();
-            $currentDropdown = null;
-        }
+        // close any existing dropdown
+        if ($currentDropdown) { $currentDropdown.remove(); $currentDropdown = null; }
+        if (closeHandler) { $(document).off('click.workflowFilterClose', closeHandler); closeHandler = null; }
 
         var $btn = $(this);
         var $th = $btn.closest('th');
         var colIndex = $th.index();
         var column = table.column(colIndex);
 
-        // get unique values
-        var uniqueVals = column.data().toArray()
-            .map(function (v) { return v === null || v === undefined ? '' : String(v); });
-        var uniq = Array.from(new Set(uniqueVals)).sort(function (a, b) {
+        // helper to escape regex for exact-match
+        function escapeRegex(text) {
+            return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+        }
+
+        // gather values robustly (attempts multiple strategies)
+        var vals = [];
+        var isServerSide = false;
+        try { isServerSide = !!table.settings()[0].oFeatures.bServerSide; } catch (e) { isServerSide = false; }
+
+        // 1) column.data()
+        try { vals = column.data().toArray().map(v => v == null ? '' : String(v)); } catch (e) { vals = []; }
+
+        // 2) cells(...).render('display') if empty and not server-side
+        if ((!vals || vals.length === 0) && !isServerSide) {
+            try { vals = table.cells(null, colIndex).render('display').toArray().map(v => v == null ? '' : String(v)); } catch (e) { vals = []; }
+        }
+
+        // 3) rows().data() mapping (handles object-row datasets)
+        if ((!vals || vals.length === 0) && !isServerSide) {
+            try {
+                var rows = table.rows({ search: 'applied' }).data().toArray();
+                if (rows && rows.length) {
+                    // try to infer column mapping from aoColumns
+                    var settings = table.settings()[0];
+                    var aoCol = (settings && settings.aoColumns && settings.aoColumns[colIndex]) || {};
+                    var mData = aoCol.mData !== undefined ? aoCol.mData : (aoCol.data !== undefined ? aoCol.data : aoCol.mDataProp);
+
+                    function getValue(row, mData) {
+                        try {
+                            if (mData == null || mData === '' || mData === undefined) {
+                                if (Array.isArray(row)) return row[colIndex] == null ? '' : row[colIndex];
+                                if (typeof row === 'object') {
+                                    // try property by index
+                                    var key = Object.keys(row)[colIndex];
+                                    return (row[key] !== undefined ? row[key] : '') + '';
+                                }
+                                return '' + row;
+                            }
+                            if (typeof mData === 'function') {
+                                try { return mData(row, 'display'); } catch (ex) { return mData(row); }
+                            }
+                            if (typeof mData === 'string') {
+                                var parts = mData.split('.');
+                                var v = row;
+                                for (var i = 0; i < parts.length && v != null; i++) v = v[parts[i]];
+                                return v == null ? '' : v;
+                            }
+                            if (typeof mData === 'number') {
+                                return row[mData] == null ? '' : row[mData];
+                            }
+                        } catch (ex) { /* ignore */ }
+                        try { return JSON.stringify(row); } catch (ex) { return '' + row; }
+                    }
+
+                    vals = rows.map(r => getValue(r, mData)).map(v => v == null ? '' : String(v));
+                }
+            } catch (e) { vals = vals || []; }
+        }
+
+        // 4) final fallback: DOM text
+        if ((!vals || vals.length === 0) && !isServerSide) {
+            try {
+                vals = [];
+                $table.find('tbody tr').each(function () {
+                    var $td = $(this).find('td').eq(colIndex);
+                    if ($td.length) vals.push($td.text().trim());
+                });
+            } catch (e) { vals = []; }
+        }
+
+        // normalise, unique & sort
+        vals = (vals || []).map(v => v == null ? '' : ('' + v).trim());
+        var uniq = Array.from(new Set(vals)).filter(x => x !== undefined && x !== null);
+        uniq.sort(function (a, b) {
             var na = parseFloat(a), nb = parseFloat(b);
             if (!isNaN(na) && !isNaN(nb)) return na - nb;
-            return a.localeCompare(b);
+            return (a + '').localeCompare(b + '');
         });
 
-        // build dropdown
+        // Build dropdown UI
         var $dropdown = $('<div class="filter-dropdown"></div>');
         var searchId = 'fs-' + Math.random().toString(36).substr(2, 9);
         $dropdown.append('<input type="text" class="filter-search" placeholder="Type to filter..." id="' + searchId + '" />');
         var selectAllId = 'sa-' + Math.random().toString(36).substr(2, 9);
-        $dropdown.append('<label class="select-all"><input type="checkbox" id="' + selectAllId + '" checked> Select / Clear Visible</label>');
+        $dropdown.append('<label class="select-all" style="display:block;margin-bottom:6px;"><input type="checkbox" id="' + selectAllId + '" checked> Select / Clear Visible</label>');
         var $list = $('<div class="filter-list"></div>');
-        uniq.forEach(function (val, i) {
-            var safeId = 'f-' + colIndex + '-' + i + '-' + Math.random().toString(36).substr(2, 6);
-            var display = val === '' ? '(blank)' : val;
-            var $label = $('<label></label>');
-            var $chk = $('<input type="checkbox" class="filter-item" checked />').attr('data-value', val).attr('id', safeId);
-            $label.append($chk).append(' <span>' + $('<div>').text(display).html() + '</span>');
-            $list.append($label);
-        });
-        $dropdown.append($list);
 
-        // append to body and position
+        if (isServerSide && (!uniq || uniq.length === 0)) {
+            // server-side: instruct or you can call server endpoint here
+            $list.append('<div class="small text-muted p-2">Server-side table: fetch distinct values from server for this column.</div>');
+        } else if (!uniq || uniq.length === 0) {
+            $list.append('<div class="small text-muted p-2">(no values)</div>');
+        } else {
+            uniq.forEach(function (val, i) {
+                var safeId = 'f-' + colIndex + '-' + i + '-' + Math.random().toString(36).substr(2, 6);
+                var display = val === '' ? '(blank)' : val;
+                var $label = $('<label style="display:block; margin-bottom:4px;"></label>');
+                var $chk = $('<input type="checkbox" class="filter-item" checked />').attr('data-value', val).attr('id', safeId);
+                $label.append($chk).append(' <span>' + $('<div>').text(display).html() + '</span>');
+                $list.append($label);
+            });
+        }
+
+        $dropdown.append($list);
         $('body').append($dropdown);
+
+        // position under TH
         var thOffset = $th.offset();
-        $dropdown.css({
-            top: thOffset.top + $th.outerHeight(),
-            left: thOffset.left,
-            position: 'absolute',
-            zIndex: 99999
-        });
+        $dropdown.css({ top: thOffset.top + $th.outerHeight(), left: thOffset.left, position: 'absolute', zIndex: 99999, minWidth: 220 });
 
         $currentDropdown = $dropdown;
+        $currentDropdown.data('colIndex', colIndex);
 
-        // search box (debounced)
+        // search box debounce
         $('#' + searchId).on('keyup', function () {
             var q = $(this).val().trim().toLowerCase();
             clearTimeout(debounceTimer);
@@ -99,18 +174,13 @@
             $list.find('label:visible .filter-item').prop('checked', checked).trigger('change');
         });
 
-        // checkbox change => apply column filter
+        // individual checkbox change => apply column filter
         $dropdown.on('change', '.filter-item', function () {
-            var $visibleCheckboxes = $list.find('label:visible .filter-item');
-            if ($visibleCheckboxes.length > 0) {
-                var checkedCountVisible = $visibleCheckboxes.filter(':checked').length;
-                $('#' + selectAllId).prop('checked', checkedCountVisible === $visibleCheckboxes.length);
-            } else {
-                $('#' + selectAllId).prop('checked', false);
-            }
-
             var selected = $list.find('.filter-item:checked').map(function () { return $(this).attr('data-value'); }).get();
-            if (selected.length === 0) { column.search('', false, false).draw(); return; }
+            if (!selected || selected.length === 0) {
+                column.search('', false, false).draw();
+                return;
+            }
             var parts = selected.map(function (s) { return '^' + escapeRegex(s) + '$'; });
             var regex = parts.join('|');
             column.search(regex, true, false).draw();
@@ -119,34 +189,25 @@
         // clicking inside dropdown shouldn't close it
         $dropdown.on('click', function (ev) { ev.stopPropagation(); });
 
-        // Attach outside-click close handler AFTER current click completes.
-        // setTimeout 0 ensures the handler won't see the opening click.
-        if (closeHandler) { $(document).off('click.workflowFilterClose', closeHandler); closeHandler = null; }
+        // attach outside-click close handler after current tick
         closeHandler = function (ev) {
-            // close only if click is outside dropdown and outside the header button
-            if ($currentDropdown && !$(ev.target).closest('.filter-dropdown, ' + tableSelector + ' thead .col-filter-btn').length) {
-                console.log('closing dropdown by outside click');
+            if ($currentDropdown && !$(ev.target).closest('.filter-dropdown, ' + $table.selector + ' thead .col-filter-btn').length) {
                 $currentDropdown.remove();
                 $currentDropdown = null;
                 $(document).off('click.workflowFilterClose', closeHandler);
                 closeHandler = null;
             }
         };
-        setTimeout(function () {
-            $(document).on('click.workflowFilterClose', closeHandler);
-        }, 0);
+        setTimeout(function () { $(document).on('click.workflowFilterClose', closeHandler); }, 0);
 
-        // if the table redraws (paging, sorting, draw, responsive), remove dropdown to avoid ghost DOM references
-        table.on('draw.dt.page.dt', function () {
+        // remove dropdown on table redraw/page or window resize/scroll
+        table.off('.workflowFilterEvents').on('draw.workflowFilterEvents page.workflowFilterEvents', function () {
+            if ($currentDropdown) { $currentDropdown.remove(); $currentDropdown = null; }
+        });
+        $(window).off('.workflowFilterEvents').on('resize.workflowFilterEvents scroll.workflowFilterEvents', function () {
             if ($currentDropdown) { $currentDropdown.remove(); $currentDropdown = null; }
         });
 
-        // also remove on window resize/scroll
-        $(window).on('resize.workflowFilter scroll.workflowFilter', function () {
-            if ($currentDropdown) { $currentDropdown.remove(); $currentDropdown = null; }
-        });
-    });
-
-    // Clean up if needed (optional)
-    // $(document).off('.workflowFilter'); $(window).off('.workflowFilter'); table.off('.workflowFilter');
-})();
+    }); // end click handler
+}, // end initComplete
+// ----------------- end pasteable block -----------------
