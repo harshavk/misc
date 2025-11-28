@@ -1,0 +1,476 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>WellsFargo Onboarding — Manager Dashboard (Hybrid AI Card)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --wf-red-700:#b91c1c; --wf-red-600:#ef4444;
+  --wf-bg:#F6F6F7; --wf-surface:#FFFFFF; --wf-border:#E8E8EA; --wf-muted:#6B7280; --wf-text:#111827;
+  --wf-accent:#10B981; --radius-md:10px; --space-4:16px; --card-shadow: 0 6px 18px rgba(15,23,42,0.04);
+}
+*{box-sizing:border-box}
+body{font-family:Inter,system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--wf-bg);color:var(--wf-text);height:100vh;display:flex;min-height:0}
+.sidebar{width:72px;background:linear-gradient(180deg,var(--wf-red-700),var(--wf-red-600));color:#fff;padding:18px 8px;display:flex;flex-direction:column;gap:18px;align-items:center}
+.logo{width:44px;height:44px;border-radius:10px;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-weight:700}
+.nav{display:flex;flex-direction:column;gap:12px;margin-top:6px;width:100%}
+.nav button{background:transparent;border:0;color:rgba(255,255,255,0.95);padding:8px;border-radius:8px;width:100%;cursor:pointer}
+.nav button.active{background:rgba(255,255,255,0.08)}
+.version{font-size:11px;color:rgba(255,255,255,0.7);margin-top:auto}
+
+.main{flex:1;display:flex;flex-direction:column;min-height:0}
+header{height:64px;display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--wf-surface);border-bottom:1px solid var(--wf-border)}
+header h1{font-size:18px;margin:0}
+.top-actions{display:flex;gap:10px;align-items:center}
+.btn{padding:8px 12px;border-radius:8px;border:1px solid #E6E6E6;background:var(--wf-surface);cursor:pointer}
+.btn.primary{background:var(--wf-red-600);color:#fff;border:0}
+
+.page{display:flex;gap:12px;padding:18px;height:calc(100vh - 64px);min-height:0}
+.left-col{width:340px;display:flex;flex-direction:column;gap:12px;min-width:260px}
+.card{background:var(--wf-surface);border-radius:var(--radius-md);padding:14px;border:1px solid var(--wf-border);box-shadow:var(--card-shadow);display:flex;flex-direction:column}
+.search{display:flex;gap:8px}
+.search input{flex:1;padding:8px 10px;border-radius:8px;border:1px solid #e6e6e6}
+.joiner-list{margin-top:8px;overflow:auto;max-height:calc(100% - 140px);padding-right:6px}
+.joiner-row{display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;cursor:pointer}
+.joiner-row:hover{background:#fafafa}
+.joiner-row.active{background:linear-gradient(90deg,#fff7f7,#fff);border-left:3px solid var(--wf-red-600)}
+.avatar{width:44px;height:44px;border-radius:8px;background:#fee2e2;color:var(--wf-red-700);display:flex;align-items:center;justify-content:center;font-weight:700}
+.meta{flex:1}
+.meta .name{font-weight:700}
+.meta .sub{font-size:12px;color:var(--wf-muted)}
+.right-meta{text-align:right;min-width:96px}
+.progress{height:8px;background:#f1f5f9;border-radius:6px;overflow:hidden;margin-top:8px}
+.progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--wf-accent),#34d399)}
+
+.center{flex:1;display:flex;flex-direction:column;gap:12px;min-width:420px;min-height:0}
+.detail-top{display:flex;align-items:center;justify-content:space-between;padding:10px;border-radius:8px}
+.detail-title{display:flex;gap:12px;align-items:center}
+.detail-avatar{width:44px;height:44px;border-radius:8px;background:#fee2e2;color:var(--wf-red-700);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px}
+.big-title{font-size:16px;font-weight:600}
+.chips{display:flex;gap:8px;align-items:center}
+.chip{padding:6px 10px;border-radius:999px;background:#f8fafc;border:1px solid #eee;font-size:12px;color:var(--wf-muted)}
+
+.detail-body{display:flex;gap:12px;min-height:0}
+.checklist{flex:1;min-width:0;overflow:auto;padding-right:6px}
+.section{margin-bottom:12px}
+.section h4{margin:0 0 8px 0;font-size:16px}
+.task{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px;border-radius:8px;border:1px solid #f3f3f3;margin-bottom:8px;background:var(--wf-surface)}
+.task .left{display:flex;gap:12px;align-items:center}
+.task .title{font-weight:600}
+.task .desc{font-size:12px;color:var(--wf-muted)}
+.task .right{display:flex;gap:8px;align-items:center}
+.status-chip{padding:6px 8px;border-radius:999px;font-size:12px}
+.status-not{background:#fff7ed;color:#92400e;border:1px solid #fde3c7}
+.status-in{background:#fff1f2;color:#9f1239;border:1px solid:#f6c2c9}
+.status-done{background:#ecfdf5;color:#065f46;border:1px solid:#bbf7d0}
+
+.right-col{width:420px;min-width:260px;display:flex;flex-direction:column;gap:12px}
+.timeline-card{flex:1;display:flex;flex-direction:column;min-height:0}
+.timeline{max-height:260px;overflow:auto;padding:6px;display:flex;flex-direction:column;gap:8px}
+.event{padding:10px;border-radius:8px;border:1px solid #f3f3f4;background:var(--wf-surface)}
+.event .time{font-size:12px;color:var(--wf-muted);margin-bottom:6px}
+.ai-compact{padding:10px;border-radius:8px;border:1px solid #eaeaea;background:linear-gradient(180deg,#fff,#fff);display:flex;flex-direction:column;gap:8px}
+.sugg-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border-radius:8px;border:1px solid #f1f1f1;background:#ffffff}
+.sugg-meta{flex:1;margin-right:8px}
+.sugg-meta .title{font-weight:700}
+.sugg-meta .reason{font-size:12px;color:var(--wf-muted)}
+.sugg-meta .conf{font-size:12px;color:#475569;margin-top:4px}
+.sugg-btn{padding:8px 10px;border-radius:8px;border:0;background:var(--wf-red-600);color:#fff;cursor:pointer}
+.open-ai{margin-top:6px;align-self:flex-end;padding:8px 10px;border-radius:8px;border:1px solid #e6e6e6;background:#fff;cursor:pointer}
+.insights{padding:10px;border-radius:8px;border:1px solid #f3f3f4;background:var(--wf-surface)}
+.small{font-size:12px;color:var(--wf-muted)}
+.footer-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+@media (max-width:1100px){ .page{flex-direction:column} .left-col{width:100%} .right-col{width:100%} .center{order:2} }
+</style>
+</head>
+<body>
+
+  <aside class="sidebar" aria-label="Main menu">
+    <div class="logo" title="WF">WF</div>
+    <nav class="nav" role="navigation" aria-label="Main">
+      <button class="active" title="Dashboard">🏠</button>
+      <button title="New Joiners">👥</button>
+      <button title="Employees">📋</button>
+      <button title="Manager">🧑‍💼</button>
+      <button title="My Buddy">🤝</button>
+      <button title="Settings">⚙️</button>
+    </nav>
+    <div class="version">v1.0</div>
+  </aside>
+
+  <div class="main" role="main">
+    <header>
+      <div>
+        <h1>Onboarding — Manager Dashboard</h1>
+        <div class="small">User: <strong>Manager User</strong> · Roles: Manager</div>
+      </div>
+      <div class="top-actions">
+        <button class="btn">Help</button>
+        <button class="btn">Notifications</button>
+        <button class="btn primary">Sign on to Workday</button>
+      </div>
+    </header>
+
+    <div class="page">
+      <!-- LEFT: Joiner list -->
+      <div class="left-col">
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <div style="font-weight:700">My New Joiners</div>
+              <div class="small">Showing hires assigned to you</div>
+            </div>
+            <div>
+              <button class="btn" onclick="bulkAssign()">Bulk</button>
+            </div>
+          </div>
+
+          <div class="search" style="margin-top:12px">
+            <input id="search" placeholder="Search name or ID..." oninput="renderList()" />
+            <button class="btn" onclick="renderList()">🔍</button>
+          </div>
+
+          <div style="margin-top:10px;" class="small">Filter: <a href="#" onclick="filterBy('all');return false">All</a> · <a href="#" onclick="filterBy('soon');return false">Starting Soon</a> · <a href="#" onclick="filterBy('inprogress');return false">In Progress</a></div>
+
+          <div class="joiner-list card" id="joinerList" style="margin-top:10px; padding:10px 12px"></div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-weight:700">Quick Actions</div>
+            <div class="small">Manager</div>
+          </div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+            <button class="btn" onclick="bulkAssign()">Assign Buddy to all</button>
+            <button class="btn" onclick="bulkRequest('cloud')">Request Cloud for selected</button>
+            <button class="btn" onclick="bulkRequest('equip')">Request Equipment for selected</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CENTER: Detail area -->
+      <div class="center">
+        <!-- compact detail top (reduced) -->
+        <div class="card detail-top">
+          <div class="detail-title">
+            <div class="detail-avatar" id="detailAvatar">J</div>
+            <div>
+              <div class="big-title" id="detailName">Select a joiner</div>
+              <div class="small" id="detailSub">Click any joiner on the left to open details</div>
+            </div>
+          </div>
+          <div class="chips">
+            <div class="chip" id="startDate">Start: -</div>
+            <div class="chip" id="statusChip">Status: -</div>
+          </div>
+        </div>
+
+        <div class="detail-body">
+          <div class="checklist card" id="checklistArea">
+            <div class="section" style="display:flex;align-items:center;justify-content:space-between">
+              <h4>Before First Day</h4>
+              <div class="small">Progress: <strong id="progressPct">0%</strong></div>
+            </div>
+
+            <div id="beforeTasks"></div>
+
+            <div class="section">
+              <h4>First Three Days</h4>
+              <div id="first3Tasks"></div>
+            </div>
+
+            <div class="section">
+              <h4>After Three Days</h4>
+              <div id="afterTasks"></div>
+            </div>
+          </div>
+
+          <!-- RIGHT: compact timeline + compact AI card -->
+          <div class="right-col">
+            <div class="card timeline-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <div><strong>Activity Timeline</strong><div class="small">Recent events (latest 8)</div></div>
+                <div><button class="btn" onclick="refreshTimeline()">Refresh</button></div>
+              </div>
+              <div id="timeline" class="timeline"></div>
+              <div style="margin-top:8px" class="small"><a href="#" onclick="openAiPage();return false">Open AI Assistant (deep)</a></div>
+            </div>
+
+            <div class="card ai-compact">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div><strong>AI Assistant</strong><div class="small">Top suggestions</div></div>
+                <div><button class="btn" onclick="runAIScan()">Run</button></div>
+              </div>
+
+              <div id="aiCompactArea" style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+                <div class="sugg-row"><div class="sugg-meta"><div class="title">Request Cloud PC</div><div class="reason">No Cloud PC requested</div><div class="conf">Rule-based · Confidence: High</div></div><button class="sugg-btn" onclick="applySuggestion('cloud')">Apply</button></div>
+                <div class="sugg-row"><div class="sugg-meta"><div class="title">Complete equipment provisioning</div><div class="reason">Laptop provisioning pending</div><div class="conf">Rule-based · Confidence: High</div></div><button class="sugg-btn" onclick="applySuggestion('equip')">Apply</button></div>
+              </div>
+
+              <button class="open-ai" onclick="openAiPage()">Open AI Assistant</button>
+            </div>
+
+            <div class="card insights">
+              <div style="font-weight:700">History Insights</div>
+              <div id="trends" class="small" style="margin-top:8px">Select a joiner to see quick trends.</div>
+              <hr style="margin:12px 0;border:none;border-top:1px solid var(--wf-border)">
+              <div style="font-weight:700">Missing items</div>
+              <div id="missing" class="small" style="margin-top:8px">-</div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* Mock data and functions reused from previous final mock */
+const mockJoiners = [
+  { employeeId:'E12345', firstName:'John', lastName:'Doe', jobTitle:'Software Engineer', manager:'Jane Smith', location:'Hyderabad', dateOfJoining:'2025-12-01', avatar:'J' },
+  { employeeId:'E12346', firstName:'Alice', lastName:'Kumar', jobTitle:'QA Engineer', manager:'Jane Smith', location:'Bangalore', dateOfJoining:'2025-12-03', avatar:'A' },
+  { employeeId:'E12347', firstName:'Bob', lastName:'Lee', jobTitle:'Analyst', manager:'Robert', location:'Hyderabad', dateOfJoining:'2025-12-05', avatar:'B' },
+  { employeeId:'E12348', firstName:'Priya', lastName:'Shah', jobTitle:'PM', manager:'Jane Smith', location:'Mumbai', dateOfJoining:'2025-12-12', avatar:'P' }
+];
+
+const mockData = {
+  'E12345': {
+    assets:[ { assetType:'Laptop', status:'InProgress' } ],
+    cloudpc: [],
+    access:[ { platform:'AIMS', status:'Completed' } ],
+    buddy: { buddyId:'E56789', name:'Ravi Kumar' },
+    trainings:[ { name:'Code of Conduct', status:'Assigned' } ],
+    events: [
+      { t:'2025-11-22T10:00', type:'AssetRequested', text:'Laptop requested' },
+      { t:'2025-11-23T09:00', type:'BuddyAssigned', text:'Buddy Ravi (E56789) assigned' }
+    ]
+  },
+  'E12346': { assets:[], cloudpc:[{userType:'VDI', status:'Pending'}], access:[], buddy:null, trainings:[], events:[] },
+  'E12347': { assets:[], cloudpc:[], access:[], buddy:null, trainings:[], events:[] },
+  'E12348': {
+    assets:[{assetType:'Monitor', status:'Completed'}],
+    cloudpc:[], access:[], buddy:{buddyId:'E8910', name:'Sara Lee'}, trainings:[{name:'Onboarding', status:'Completed'}],
+    events:[{ t:'2025-11-20T08:00', type:'AssetDelivered', text:'Monitor delivered' }]
+  }
+};
+
+let currentFilter = 'all';
+let selectedId = null;
+
+function computeOverallStatus(empId){
+  const d = mockData[empId] || {};
+  const hasAsset = (d.assets && d.assets.length>0);
+  const assetDone = d.assets && d.assets.every(a => a.status==='Completed');
+  const cloudDone = d.cloudpc && d.cloudpc.length>0 && d.cloudpc.every(c=>c.status==='Completed');
+  const accessDone = d.access && d.access.length>0 && d.access.every(a=>a.status==='Completed');
+  const buddyAssigned = !!d.buddy;
+  const trainingDone = d.trainings && d.trainings.length>0 && d.trainings.every(t=>t.status==='Completed');
+
+  if (assetDone && cloudDone && accessDone && buddyAssigned && trainingDone) return {status:'Completed', pct:100};
+  if (hasAsset || (d.cloudpc && d.cloudpc.length) || (d.access && d.access.length) || buddyAssigned || (d.trainings && d.trainings.length)) {
+    let total=5, done=0;
+    if (assetDone) done++; else if (hasAsset) done+=0.4;
+    if (cloudDone) done++; else if (d.cloudpc && d.cloudpc.length) done+=0.3;
+    if (accessDone) done++; else if (d.access && d.access.length) done+=0.3;
+    if (buddyAssigned) done+=0.8;
+    if (trainingDone) done++; else if (d.trainings && d.trainings.length) done+=0.2;
+    let pct = Math.min(100, Math.round((done/total)*100));
+    return {status:'In Progress', pct};
+  }
+  return {status:'Not Started', pct:0};
+}
+
+function renderList(){
+  const q = (document.getElementById('search').value || '').toLowerCase();
+  const container = document.getElementById('joinerList');
+  container.innerHTML = '';
+  const list = mockJoiners.filter(j => {
+    if (currentFilter==='soon') {
+      return ['E12345','E12346'].includes(j.employeeId);
+    } else if (currentFilter==='inprogress') {
+      const s = computeOverallStatus(j.employeeId).status;
+      return s==='In Progress';
+    } else return true;
+  }).filter(j => (j.firstName + ' ' + j.lastName + ' ' + j.employeeId + ' ' + j.jobTitle).toLowerCase().includes(q));
+
+  list.forEach(j => {
+    const status = computeOverallStatus(j.employeeId);
+    const row = document.createElement('div');
+    row.className = 'joiner-row' + (selectedId===j.employeeId ? ' active':'');
+    row.onclick = ()=> selectJoiner(j.employeeId);
+    row.innerHTML = `
+      <div class="avatar">${j.avatar}</div>
+      <div class="meta">
+        <div class="name">${j.firstName} ${j.lastName} <span class="small" style="font-weight:500">· ${j.employeeId}</span></div>
+        <div class="sub">${j.jobTitle} · ${j.location} · Start ${j.dateOfJoining}</div>
+        <div class="progress"><i style="width:${status.pct}%"></i></div>
+      </div>
+      <div class="right-meta">
+        <div class="small">${status.status}</div>
+        <div style="margin-top:8px;font-size:12px;color:var(--wf-muted)">${status.pct}%</div>
+      </div>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function selectJoiner(empId){
+  selectedId = empId;
+  renderList();
+  const j = mockJoiners.find(x=>x.employeeId===empId);
+  const d = mockData[empId] || {};
+  document.getElementById('detailAvatar').textContent = j.avatar;
+  document.getElementById('detailName').textContent = `${j.firstName} ${j.lastName}`;
+  document.getElementById('detailSub').textContent = `${j.jobTitle} · ${j.location}`;
+  document.getElementById('startDate').textContent = `Start: ${j.dateOfJoining}`;
+  const status = computeOverallStatus(empId);
+  document.getElementById('statusChip').textContent = `Status: ${status.status}`;
+  document.getElementById('progressPct').textContent = `${status.pct}%`;
+
+  // before tasks
+  const beforeEl = document.getElementById('beforeTasks'); beforeEl.innerHTML='';
+  const beforeTasks = [
+    { key:'equipment', title:'Order equipment (laptop, monitor, headset)', done:(d.assets && d.assets.some(a=>a.status==='Completed')) },
+    { key:'cloud', title:'Request Cloud PC / Virtual Desktop', done:(d.cloudpc && d.cloudpc.some(c=>c.status==='Completed')) },
+    { key:'access', title:'Request platform accesses (AIMS / ART)', done:(d.access && d.access.some(a=>a.status==='Completed')) },
+    { key:'workday', title:'Confirm Workday job & location', done:false },
+    { key:'workspace', title:'Assign workspace / cubicle', done:(d.assets && d.assets.some(a=>a.cubicleNumber)) },
+    { key:'buddy', title:'Assign onboarding buddy', done: !!d.buddy }
+  ];
+  beforeTasks.forEach(t => {
+    const el = document.createElement('div'); el.className='task';
+    el.innerHTML = `
+      <div class="left">
+        <div style="width:10px"></div>
+        <div>
+          <div class="title">${t.title}</div>
+          <div class="desc">Responsible: Manager</div>
+        </div>
+      </div>
+      <div class="right">
+        <div class="status-chip ${t.done ? 'status-done':'status-not'}">${t.done ? 'Completed':'Not Started'}</div>
+        <button class="btn" onclick="fakeAction('${empId}','${t.key}', event)">${t.done ? 'View':'Take action'}</button>
+      </div>
+    `;
+    beforeEl.appendChild(el);
+  });
+
+  // first 3 days
+  const firstEl = document.getElementById('first3Tasks'); firstEl.innerHTML='';
+  const first3 = [
+    { key:'attendance', title:'Review attendance & time tracking', done:false },
+    { key:'welcome', title:'Welcome meeting & team intro', done:false },
+    { key:'verify', title:'Verify equipment & login', done:(d.assets && d.assets.length>0) }
+  ];
+  first3.forEach(t=>{
+    const el = document.createElement('div'); el.className='task';
+    el.innerHTML = `
+      <div class="left"><div style="width:10px"></div><div><div class="title">${t.title}</div><div class="desc">Owner: Manager / Buddy</div></div></div>
+      <div class="right"><div class="status-chip ${t.done ? 'status-done':'status-in'}">${t.done ? 'Completed' : 'In Progress'}</div></div>
+    `;
+    firstEl.appendChild(el);
+  });
+
+  // after 3 days
+  const afterEl = document.getElementById('afterTasks'); afterEl.innerHTML='';
+  const after3 = [
+    { key:'training', title:'Assign mandatory trainings', done:(d.trainings && d.trainings.some(tt=>tt.status==='Completed')) },
+    { key:'benefits', title:'Discuss benefits & resources', done:false },
+    { key:'goals', title:'Set 90-day goals', done:false }
+  ];
+  after3.forEach(t=>{
+    const el = document.createElement('div'); el.className='task';
+    el.innerHTML = `<div class="left"><div style="width:10px"></div><div><div class="title">${t.title}</div><div class="desc">Owner: Manager</div></div></div><div class="right"><div class="status-chip ${t.done ? 'status-done':'status-not'}">${t.done ? 'Completed':'Not Started'}</div></div>`;
+    afterEl.appendChild(el);
+  });
+
+  refreshTimeline();
+  refreshInsights();
+  renderCompactAI();
+}
+
+/* Timeline & insights */
+function refreshTimeline(){
+  const t = document.getElementById('timeline'); t.innerHTML='';
+  if(!selectedId) { t.innerHTML = '<div class="small">Select a joiner to load timeline.</div>'; return; }
+  const events = (mockData[selectedId] && mockData[selectedId].events) ? mockData[selectedId].events.slice().sort((a,b)=>new Date(b.t)-new Date(a.t)) : [];
+  if(!events.length) t.innerHTML = '<div class="small">No activity yet.</div>';
+  events.forEach(e=>{
+    const ev = document.createElement('div'); ev.className='event';
+    ev.innerHTML = `<div class="time">${new Date(e.t).toLocaleString()}</div><div>${e.text}</div>`;
+    t.appendChild(ev);
+  });
+}
+
+function refreshInsights(){
+  const trendsEl = document.getElementById('trends');
+  const missingEl = document.getElementById('missing');
+  if(!selectedId){ trendsEl.textContent = 'Select a joiner to see quick trends.'; missingEl.textContent = '-'; return; }
+  const d = mockData[selectedId] || {};
+  const trends = [];
+  const start = mockJoiners.find(j=>j.employeeId===selectedId).dateOfJoining;
+  trends.push(`Start date: ${start}`);
+  if(d.assets && d.assets.length) trends.push(`Equipment: ${d.assets.map(a=>a.assetType+ ' ('+a.status+')').join(', ')}`);
+  if(d.cloudpc && d.cloudpc.length) trends.push(`Cloud PC: ${d.cloudpc.map(c=>c.userType+' ('+c.status+')').join(', ')}`);
+  if(d.trainings && d.trainings.length) trends.push(`Trainings: ${d.trainings.map(t=>t.name+' ('+t.status+')').join(', ')}`);
+  if(d.buddy) trends.push(`Buddy: ${d.buddy.name || d.buddy.buddyId}`);
+  trendsEl.innerHTML = trends.map(x=>'<div class="small">'+x+'</div>').join('');
+
+  const missing = [];
+  if(!d.assets || d.assets.length===0) missing.push('Equipment provisioning');
+  else if(d.assets && d.assets.every(a=>a.status!=='Completed')) missing.push('Equipment provisioning');
+  if(!d.cloudpc || d.cloudpc.length===0) missing.push('Cloud PC');
+  if(!d.access || d.access.length===0) missing.push('Platform access (AIMS/ART)');
+  if(!d.buddy) missing.push('Buddy');
+  if(!d.trainings || d.trainings.length===0) missing.push('Mandatory trainings');
+  missingEl.innerHTML = missing.length ? '<div class="small">'+missing.join(', ')+'</div>' : '<div class="small">None. Good to go!</div>';
+}
+
+/* AI compact rendering */
+function renderCompactAI(){
+  const aiCompactArea = document.getElementById('aiCompactArea');
+  aiCompactArea.innerHTML = '';
+  if(!selectedId){
+    aiCompactArea.innerHTML = '<div class="small">No joiner selected.</div>'; return;
+  }
+  const d = mockData[selectedId] || {};
+  const suggestions = [];
+  if(!d.cloudpc || d.cloudpc.length===0) suggestions.push({id:'cloud', title:'Request Cloud PC', reason:'No Cloud PC requested', level:'High'});
+  if(!d.assets || d.assets.every(a=>a.status!=='Completed')) suggestions.push({id:'equip', title:'Complete equipment provisioning', reason:'Laptop not completed', level:'Medium'});
+  if(!d.buddy) suggestions.push({id:'buddy', title:'Assign onboarding buddy', reason:'No buddy assigned', level:'Low'});
+  suggestions.slice(0,3).forEach(s=>{
+    const row = document.createElement('div'); row.className='sugg-row';
+    row.innerHTML = `<div class="sugg-meta"><div class="title">${s.title}</div><div class="reason">${s.reason}</div><div class="conf">Confidence: High</div></div><button class="sugg-btn" onclick="applySuggestion('${s.id}')">Apply</button>`;
+    aiCompactArea.appendChild(row);
+  });
+  const openBtn = document.createElement('button'); openBtn.className='open-ai'; openBtn.textContent='Open AI Assistant'; openBtn.onclick = openAiPage;
+  aiCompactArea.appendChild(openBtn);
+}
+
+function runAIScan(){ if(!selectedId) return alert('Select a joiner first'); renderCompactAI(); alert('AI scan completed (mock)'); }
+
+function applySuggestion(id){
+  if(!selectedId) return;
+  const d = mockData[selectedId] = mockData[selectedId] || {};
+  if(id==='cloud'){ d.cloudpc = d.cloudpc || []; d.cloudpc.push({userType:'VDI',status:'Pending'}); d.events = d.events || []; d.events.push({t:new Date().toISOString(), type:'CloudRequested', text:'Cloud PC requested (AI)'}); }
+  if(id==='equip'){ d.assets = d.assets || []; d.assets.push({assetType:'Laptop',status:'InProgress'}); d.events = d.events || []; d.events.push({t:new Date().toISOString(), type:'AssetRequested', text:'Laptop requested (AI)'}); }
+  if(id==='buddy'){ d.buddy = {buddyId:'E56789', name:'Ravi Kumar'}; d.events = d.events || []; d.events.push({t:new Date().toISOString(), type:'BuddyAssigned', text:'Buddy Ravi (E56789) assigned (AI)'}); }
+  refreshTimeline(); refreshInsights(); renderCompactAI();
+  alert('Applied suggestion (mock): ' + id);
+}
+
+/* Other helpers */
+function fakeAction(empId, key, ev){ ev.stopPropagation(); const d = mockData[empId] = mockData[empId] || {}; switch(key){ case 'equipment': d.assets = d.assets || []; d.assets.push({ assetType:'Laptop', status:'InProgress' }); alert('Equipment requested (mock)'); break; case 'cloud': d.cloudpc = d.cloudpc || []; d.cloudpc.push({ userType:'VDI', status:'Pending' }); alert('Cloud PC request created (mock)'); break; case 'access': d.access = d.access || []; d.access.push({ platform:'AIMS', status:'Pending' }); alert('Access request created (mock)'); break; case 'buddy': d.buddy = { buddyId:'E56789', name:'Ravi Kumar' }; alert('Buddy assigned (mock)'); break; default: alert('Action done (mock)'); } selectJoiner(empId); }
+function bulkAssign(){ const ids = mockJoiners.map(j=>j.employeeId); ids.forEach(id => { const d = mockData[id] = mockData[id] || {}; d.buddy = d.buddy || { buddyId:'E56789', name:'Ravi Kumar' }; }); alert('Assigned buddy to all (mock)'); if(selectedId) selectJoiner(selectedId); else renderList(); }
+function bulkRequest(type){ const ids = mockJoiners.map(j=>j.employeeId); ids.forEach(id => { const d = mockData[id] = mockData[id] || {}; if(type==='cloud'){ d.cloudpc = d.cloudpc || []; d.cloudpc.push({userType:'VDI',status:'Pending'}); d.events = d.events || []; d.events.push({t:new Date().toISOString(), type:'CloudRequested', text:'Cloud PC requested (Bulk)'}); } if(type==='equip'){ d.assets = d.assets || []; d.assets.push({assetType:'Laptop',status:'InProgress'}); d.events = d.events || []; d.events.push({t:new Date().toISOString(), type:'AssetRequested', text:'Laptop requested (Bulk)'}); } }); alert('Bulk request created (mock)'); if(selectedId) selectJoiner(selectedId); else renderList(); }
+function openAiPage(){ window.open('sandbox:/mnt/data/onboard_ai_assistant_fullpage.html','_blank'); }
+
+function filterBy(kind){ currentFilter = kind; renderList(); }
+renderList();
+</script>
+
+</body>
+</html>

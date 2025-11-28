@@ -1,0 +1,179 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>WellsFargo Onboarding — AI Assistant (Full Page)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--wf-red-600:#ef4444;--wf-bg:#F6F6F7;--wf-surface:#fff;--wf-border:#E8E8EA;--wf-muted:#6B7280;--wf-text:#111827;--wf-accent:#10B981;--radius:10px}
+*{box-sizing:border-box}
+body{font-family:Inter,system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--wf-bg);color:var(--wf-text);height:100vh;display:flex;flex-direction:column}
+.header{height:64px;display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--wf-surface);border-bottom:1px solid var(--wf-border)}
+.header h1{font-size:18px;margin:0}
+.container{display:grid;grid-template-columns:320px 1fr 360px;gap:16px;padding:16px;flex:1;min-height:0}
+.panel{background:var(--wf-surface);border-radius:var(--radius);padding:12px;border:1px solid var(--wf-border);box-shadow:0 6px 18px rgba(15,23,42,0.04);overflow:auto}
+.context .avatar{width:56px;height:56px;border-radius:8px;background:#fee2e2;color:var(--wf-red-600);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;margin-bottom:8px}
+.context .title{font-weight:700;font-size:16px}
+.context .meta{font-size:13px;color:var(--wf-muted);margin-top:6px}
+.chat{display:flex;flex-direction:column;height:100%;min-height:0}
+.chat-body{flex:1;overflow:auto;padding:8px;display:flex;flex-direction:column;gap:8px}
+.msg{max-width:80%;padding:10px;border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,0.03)}
+.msg.manager{align-self:flex-end;background:#ecfeef;color:#044b24}
+.msg.assistant{align-self:flex-start;background:#fff}
+.msg.system{align-self:center;background:#fff3cd;color:#7c2d12}
+.chat-input{display:flex;gap:8px;padding-top:8px;border-top:1px solid var(--wf-border)}
+.chat-input textarea{flex:1;padding:8px;border-radius:8px;border:1px solid #e6e6e6;resize:none}
+.btn{padding:8px 12px;border-radius:8px;border:0;background:var(--wf-red-600);color:#fff;cursor:pointer}
+.actions .action{padding:10px;border-radius:8px;border:1px solid #f1f1f1;background:#fff;margin-bottom:8px}
+.evidence{padding:8px;border-radius:8px;border:1px dashed #e6e7e8;background:#fff;margin-top:8px}
+.small{font-size:12px;color:var(--wf-muted)}
+.right-actions{display:flex;flex-direction:column;gap:8px}
+.right-actions .apply-btn{padding:8px;border-radius:8px;border:0;background:var(--wf-red-600);color:#fff;cursor:pointer;width:100%}
+.right-actions .preview{padding:8px;border-radius:8px;border:1px solid #f3f3f4;background:#fff;margin-bottom:8px}
+.footer{height:48px;background:var(--wf-surface);border-top:1px solid var(--wf-border);display:flex;align-items:center;justify-content:flex-end;padding:8px 16px}
+@media (max-width:1100px){ .container{grid-template-columns:1fr;grid-auto-rows:minmax(200px,auto)} }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>AI Assistant — Deep Workspace</h1>
+    <div><button onclick="window.close()" class="btn">Close</button></div>
+  </div>
+
+  <div class="container">
+    <!-- LEFT: Context -->
+    <div class="panel context">
+      <div class="avatar" id="ctxAvatar">J</div>
+      <div class="title" id="ctxName">Select a joiner in dashboard</div>
+      <div class="meta" id="ctxMeta">Employee ID / Job / Start date</div>
+      <hr style="margin:12px 0;border:none;border-top:1px solid var(--wf-border)">
+      <div style="font-weight:700">Snapshot</div>
+      <div id="snapshot" class="small" style="margin-top:8px">No joiner selected. Open dashboard and click "Open AI Assistant" for the selected joiner.</div>
+      <hr style="margin:12px 0;border:none;border-top:1px solid var(--wf-border)">
+      <div style="font-weight:700">Recent events</div>
+      <div id="ctxEvents" class="small" style="margin-top:8px">-</div>
+    </div>
+
+    <!-- CENTER: Chat -->
+    <div class="panel chat">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-weight:700">Assistant Chat</div>
+        <div class="small">Context: Per-employee • RAG enabled</div>
+      </div>
+
+      <div class="chat-body" id="chatBody" aria-live="polite">
+        <div class="msg system">Welcome to the AI Assistant. Ask about missing tasks, draft announcements, or apply quick actions.</div>
+      </div>
+
+      <div class="chat-input">
+        <textarea id="chatInput" rows="2" placeholder="Ask: 'What's missing before John's start date?'"></textarea>
+        <button class="btn" onclick="sendChat()">Send</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: Actions & Evidence -->
+    <div class="panel right-actions">
+      <div style="font-weight:700">Suggested Actions</div>
+      <div id="actionsList">
+        <div class="action">
+          <div style="font-weight:700">Request Cloud PC <span class="small">· High</span></div>
+          <div class="small" style="margin-top:6px">Creates CloudPC request with default template.</div>
+          <div style="margin-top:8px"><button class="apply-btn" onclick="applyAction('cloud')">Apply</button></div>
+        </div>
+        <div class="action">
+          <div style="font-weight:700">Assign Buddy <span class="small">· Medium</span></div>
+          <div class="small" style="margin-top:6px">Propose buddy from same location/team.</div>
+          <div style="margin-top:8px"><button class="apply-btn" onclick="applyAction('buddy')">Apply</button></div>
+        </div>
+      </div>
+
+      <div style="margin-top:8px;font-weight:700">Evidence (RAG)</div>
+      <div id="evidenceArea">
+        <div class="evidence">No evidence loaded. Open from dashboard.</div>
+      </div>
+
+      <div style="margin-top:8px;font-weight:700">Audit log</div>
+      <div id="auditLog" class="small" style="margin-top:8px">No actions yet.</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="small">Model: internal (mock) · All AI suggestions require manager confirmation</div>
+  </div>
+
+<script>
+/* This page expects to be opened from the dashboard with a selected joiner.
+   For demo, it reads a query param ?id=E12345 or falls back to a default. */
+
+function getQueryParam(name){
+  const params = new URLSearchParams(location.search);
+  return params.get(name);
+}
+
+const demoJoiners = {
+  'E12345': {name:'John Doe', id:'E12345', job:'Software Engineer', start:'2025-12-01', avatar:'J', events:[
+    {t:'2025-11-22T10:00', text:'Laptop requested'}, {t:'2025-11-23T09:00', text:'Buddy assigned'}
+  ], assets:[{type:'Laptop',status:'InProgress'}], cloudpc:[]},
+  'E12346': {name:'Alice Kumar', id:'E12346', job:'QA Engineer', start:'2025-12-03', avatar:'A', events:[], assets:[], cloudpc:[{type:'VDI',status:'Pending'}]}
+};
+
+const selected = getQueryParam('id') || 'E12345';
+const ctx = demoJoiners[selected] || null;
+
+if(ctx){
+  document.getElementById('ctxAvatar').textContent = ctx.avatar;
+  document.getElementById('ctxName').textContent = ctx.name + ' · ' + ctx.id;
+  document.getElementById('ctxMeta').textContent = ctx.job + ' · Start ' + ctx.start;
+  document.getElementById('snapshot').innerHTML = '<div class="small">Assets: '+(ctx.assets.length?ctx.assets.map(a=>a.type+' ('+a.status+')').join(', '):'None')+'</div>';
+  document.getElementById('ctxEvents').innerHTML = ctx.events.length ? ctx.events.map(e=>'<div class=\"small\">'+new Date(e.t).toLocaleString()+' · '+e.text+'</div>').join('') : '<div class=\"small\">No recent events</div>';
+  document.getElementById('evidenceArea').innerHTML = '<div class="evidence">Events & rows: CloudPC table: no row found; Asset table: Laptop (InProgress)</div>';
+}
+
+function sendChat(){
+  const input = document.getElementById('chatInput');
+  const text = (input.value||'').trim();
+  if(!text) return;
+  appendMsg('manager', text);
+  input.value = '';
+  // Mock assistant response after delay; include evidence & suggested action buttons
+  setTimeout(()=> {
+    const lower = text.toLowerCase();
+    if(lower.includes('missing')){
+      appendMsg('assistant', 'Detected missing items: Cloud PC (not requested), Laptop provisioning InProgress. Recommend: Request Cloud PC, expedite laptop delivery.');
+      document.getElementById('evidenceArea').innerHTML = '<div class="evidence">Evidence: CloudPC table (no row), Asset row (Laptop: InProgress)</div>';
+      addAudit('AI generated suggestions for '+selected);
+    } else if(lower.includes('draft')){
+      appendMsg('assistant', 'Draft created: "Please welcome John Doe joining on 2025-12-01. Buddy: Ravi Kumar. Please provide access to AIMS." Use the Apply button to create announcement.');
+      addAudit('AI drafted announcement for '+selected);
+    } else {
+      appendMsg('assistant', "I can suggest actions (Request Cloud PC, Assign buddy, Draft announcement). Try 'what's missing' or 'draft announcement'.");
+    }
+  }, 700);
+}
+
+function appendMsg(role, text){
+  const body = document.getElementById('chatBody');
+  const div = document.createElement('div'); div.className = 'msg ' + (role==='manager' ? 'manager' : (role==='assistant' ? 'assistant' : 'system'));
+  div.textContent = text;
+  body.appendChild(div);
+  body.scrollTop = body.scrollHeight;
+}
+
+function applyAction(id){
+  // Mock applying action and add to audit log
+  const log = document.getElementById('auditLog');
+  const entry = new Date().toLocaleString() + ' · Applied action: ' + id;
+  log.innerHTML = entry + '<br/>' + log.innerHTML;
+  appendMsg('system', 'Action applied (mock): ' + id);
+}
+
+function addAudit(text){
+  const log = document.getElementById('auditLog');
+  const entry = new Date().toLocaleString() + ' · ' + text;
+  log.innerHTML = entry + '<br/>' + log.innerHTML;
+}
+</script>
+</body>
+</html>
