@@ -1,0 +1,142 @@
+triggerAction(action: ActionResult) {
+  if (action.actionType === 'link' && action.url) {
+    window.open(action.url, '_blank', 'noopener');
+  } else {
+    console.log('Execute workflow action:', action.payload || action.label);
+  }
+
+  const entry: AuditEntry = {
+    kind: 'action',
+    label: action.label,
+    url: action.url ?? null,
+    timestamp: new Date().toISOString(),
+  };
+
+  this.auditLog.update(list => [entry, ...list]);
+
+  this.snackBar.open(`Mock action executed: ${action.label}`, 'OK', {
+    duration: 2500,
+  });
+}
+
+
+private wireUpLinkTracking() {
+  const el = this.chatThreadRef?.nativeElement;
+  if (!el) return;
+
+  el.querySelectorAll('a[data-audit]').forEach(a => {
+    if ((a as any)._auditWired) return;
+    (a as any)._auditWired = true;
+
+    a.addEventListener('click', (evt) => {
+      const target = evt.currentTarget as HTMLAnchorElement;
+      const label = target.dataset['audit'] || target.innerText || 'link';
+
+      const log = `✓ Link clicked: "${label}" — ${new Date().toLocaleTimeString()}`;
+      this.auditLog.update(list => [log, ...list]);
+    });
+  });
+}
+
+
+
+a.addEventListener('click', (evt) => {
+  const target = evt.currentTarget as HTMLAnchorElement;
+  const label = target.dataset['audit'] || target.innerText || 'link';
+
+  const entry: AuditEntry = {
+    kind: 'link',
+    label,
+    url: target.href,
+    timestamp: new Date().toISOString(),
+  };
+
+  this.auditLog.update(list => [entry, ...list]);
+});
+
+
+
+
+<div class="audit-log">
+  <p class="small" *ngIf="!auditLog().length">No actions yet.</p>
+
+  <ul *ngIf="auditLog().length">
+    <li *ngFor="let entry of auditLog()">
+      <!-- left icon depending on type -->
+      <mat-icon class="audit-icon" *ngIf="entry.kind === 'action'">bolt</mat-icon>
+      <mat-icon class="audit-icon" *ngIf="entry.kind === 'link'">link</mat-icon>
+
+      <!-- main text -->
+      <span class="audit-text">
+        <ng-container [ngSwitch]="entry.kind">
+          <ng-container *ngSwitchCase="'action'">
+            Action: {{ entry.label }}
+          </ng-container>
+          <ng-container *ngSwitchCase="'link'">
+            Link clicked: "{{ entry.label }}"
+          </ng-container>
+        </ng-container>
+        —
+        <span class="audit-time">
+          {{ entry.timestamp | date: 'shortTime' }}
+        </span>
+      </span>
+
+      <!-- clickable "open" icon if URL exists -->
+      <button
+        *ngIf="entry.url"
+        mat-icon-button
+        class="audit-open-btn"
+        type="button"
+        [matTooltip]="'Open ' + entry.label"
+        (click)="openAuditEntry(entry)"
+      >
+        <mat-icon>open_in_new</mat-icon>
+      </button>
+    </li>
+  </ul>
+</div>
+
+
+
+openAuditEntry(entry: AuditEntry) {
+  if (!entry.url) return;
+  window.open(entry.url, '_blank', 'noopener');
+}
+
+
+
+.audit-log ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+.audit-log li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  padding: 4px 0;
+}
+
+.audit-icon {
+  font-size: 16px;
+  color: #9ca3af;
+}
+
+.audit-text {
+  flex: 1;
+  color: #374151;
+}
+
+.audit-time {
+  color: #9ca3af;
+}
+
+.audit-open-btn {
+  margin-left: 4px;
+}
+
+
+
