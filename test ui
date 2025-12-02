@@ -1,0 +1,484 @@
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  signal,
+  ViewChild,
+  ElementRef,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
+
+import { MatToolbarModule } from '@angular/material/toolbar';
+import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+
+import { AiSearchService } from './services/ai-search.service';
+import {
+  AiSearchResponse,
+  ChatHistoryItem,
+  ActionResult,
+} from './models/ai-search.models';
+import { ActionResultItemComponent } from './components/action-result-item/action-result-item.component';
+import { ThreadMessage } from './models/ai-thread.models';
+
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+
+    MatToolbarModule,
+    MatIconModule,
+    MatButtonModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatSnackBarModule,
+
+    ActionResultItemComponent,
+  ],
+  templateUrl: './app.component.html',
+  styleUrls: ['./app.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class AppComponent {
+  private ai = inject(AiSearchService);
+  private snackBar = inject(MatSnackBar);
+
+  readonly title = 'Onboarding AI Assistant';
+
+  readonly queryControl = new FormControl<string>('', {
+    nonNullable: true,
+    validators: [Validators.required, Validators.minLength(3)],
+  });
+
+  readonly isLoading = signal(false);
+  readonly isAiTyping = signal(false);
+  readonly error = signal<string | null>(null);
+
+  chatMessages = signal<ThreadMessage[]>([]);
+  readonly lastResponse = signal<AiSearchResponse | null>(null);
+  readonly currentThreadId = signal<string>(crypto.randomUUID());
+
+  readonly chatHistory = signal<ChatHistoryItem[]>([]);
+  readonly auditLog = signal<
+    { kind: 'link'; label: string; url: string; timestamp: string }[]
+  >([]);
+
+  @ViewChild('chatThread') chatThreadRef?: ElementRef<HTMLDivElement>;
+
+  private threadMessagesStore = new Map<string, ThreadMessage[]>();
+  private threadResponseStore = new Map<string, AiSearchResponse>();
+
+  // ----------------------------------------------------
+  // Helpers
+  // ----------------------------------------------------
+
+  private withLocalTimestamp(msg: ThreadMessage): ThreadMessage {
+    return {
+      ...msg,
+      localTimestamp: new Date().toISOString(),
+    };
+  }
+
+  private scrollToBottom() {
+    setTimeout(() => {
+      const el = this.chatThreadRef?.nativeElement;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, 0);
+  }
+
+  isRichMessage(msg: ThreadMessage): boolean {
+    return (
+      msg.content?.includes('<a') ||
+      msg.content?.includes('<button') ||
+      msg.content?.includes('<div')
+    );
+  }
+
+  getMessageHtml(msg: ThreadMessage): string {
+    return msg.content || '';
+  }
+
+  private stripHtml(html: string) {
+    return html.replace(/<[^>]+>/g, '');
+  }
+
+  private getActivityHint(count: number): 'New' | 'Short' | 'Active' | 'Long' {
+    if (count <= 1) return 'New';
+    if (count <= 4) return 'Short';
+    if (count <= 10) return 'Active';
+    return 'Long';
+  }
+
+  // ----------------------------------------------------
+  // EVENTS
+  // ----------------------------------------------------
+
+  submitQuery() {
+    this.error.set(null);
+
+    if (this.queryControl.invalid) return;
+
+    const query = this.queryControl.value.trim();
+    if (!query) return;
+
+    // push HUMAN message immediately
+    this.chatMessages.update((list) => [
+      ...list,
+      this.withLocalTimestamp({
+        type: 'human',
+        content: query,
+        tool_call: null,
+      }),
+    ]);
+
+    this.scrollToBottom();
+
+    this.isLoading.set(true);
+    this.isAiTyping.set(true);
+
+    this.ai.search(query, this.currentThreadId()).subscribe({
+      next: (res) => {
+        this.isLoading.set(false);
+        this.isAiTyping.set(false);
+
+        this.lastResponse.set(res);
+        this.currentThreadId.set(res.threadId);
+
+        const fromApi = (res.historyMessages || [])
+          .filter((m) => m.type === 'human' || (m.type === 'ai' && m.content))
+          .map((m) => this.withLocalTimestamp(m));
+
+        this.chatMessages.set(fromApi);
+        this.scrollToBottom();
+
+        this.threadMessagesStore.set(res.threadId, fromApi);
+        this.threadResponseStore.set(res.threadId, res);
+
+        this.updateHistory(res, fromApi);
+        this.wireUpLinkTracking();
+      },
+      error: () => {
+        this.isLoading.set(false);
+        this.isAiTyping.set(false);
+
+        this.error.set('Call to AI API failed.');
+        this.snackBar.open('AI request failed', 'Dismiss', {
+          duration: 3000,
+        });
+      },
+    });
+
+    this.queryControl.setValue('');
+  }
+
+  onKeydownEnter(evt: KeyboardEvent) {
+    if (evt.key === 'Enter' && !evt.shiftKey) {
+      evt.preventDefault();
+      this.submitQuery();
+    }
+  }
+
+  reuseHistoryItem(item: ChatHistoryItem) {
+    this.currentThreadId.set(item.id);
+
+    const msgs = this.threadMessagesStore.get(item.id);
+    this.chatMessages.set(msgs || []);
+
+    const resp = this.threadResponseStore.get(item.id);
+    this.lastResponse.set(resp ?? null);
+
+    this.scrollToBottom();
+    this.wireUpLinkTracking();
+  }
+
+  startNewChat() {
+    this.currentThreadId.set(crypto.randomUUID());
+    this.chatMessages.set([]);
+    this.lastResponse.set(null);
+    this.error.set(null);
+  }
+
+  clearHistory() {
+    this.chatHistory.set([]);
+    this.chatMessages.set([]);
+    this.auditLog.set([]);
+    this.error.set(null);
+
+    this.threadMessagesStore.clear();
+    this.threadResponseStore.clear();
+  }
+
+  trackMessage(index: number, msg: ThreadMessage) {
+    return `${msg.type}-${index}-${msg.content?.slice(0, 15)}`;
+  }
+
+  // ----------------------------------------------------
+  // HISTORY & PREVIEW
+  // ----------------------------------------------------
+
+  private updateHistory(res: AiSearchResponse, msgs: ThreadMessage[]) {
+    const lastAi =
+      [...msgs].reverse().find((m) => m.type === 'ai' && m.content)?.content ||
+      '';
+
+    const previewText = this.stripHtml(lastAi).slice(0, 80);
+    const time = new Date().toISOString();
+
+    this.chatHistory.update((items) => {
+      const others = items.filter((i) => i.id !== res.threadId);
+
+      return [
+        {
+          id: res.threadId,
+          query: res.query,
+          createdAt: time,
+          messagesCount: msgs.length,
+          lastPreview: previewText,
+          activityHint: this.getActivityHint(msgs.length),
+        },
+        ...others,
+      ];
+    });
+  }
+
+  // ----------------------------------------------------
+  // ✅ LINK AUDIT TRACKING
+  // ----------------------------------------------------
+
+  private wireUpLinkTracking() {
+    const el = this.chatThreadRef?.nativeElement;
+    if (!el) return;
+
+    el.querySelectorAll('a').forEach((a) => {
+      if ((a as any)._auditWired) return;
+      (a as any)._auditWired = true;
+
+      a.addEventListener('click', () => {
+        const label = a.innerText?.trim() || 'link';
+
+        this.auditLog.update((list) => [
+          {
+            kind: 'link',
+            label,
+            url: a.href,
+            timestamp: new Date().toISOString(),
+          },
+          ...list,
+        ]);
+      });
+    });
+  }
+}
+
+
+
+
+
+
+/* -----------------------------------------------------------
+   CHAT THREAD
+------------------------------------------------------------*/
+
+.chat-thread-wrapper {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* -----------------------------------------------------------
+   MESSAGE ROWS
+------------------------------------------------------------*/
+
+.chat-row {
+  display: flex;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.chat-row.from-human {
+  justify-content: flex-end;
+}
+
+.chat-row.from-ai {
+  justify-content: flex-start;
+}
+
+/* -----------------------------------------------------------
+   AVATAR
+------------------------------------------------------------*/
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: #b91c1c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-row.from-human .avatar {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+/* -----------------------------------------------------------
+   BUBBLE
+------------------------------------------------------------*/
+
+.bubble {
+  max-width: min(70%, 640px);
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: #fef2f2;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+  font-size: 0.85rem;
+  word-wrap: break-word;
+}
+
+.chat-row.from-human .bubble {
+  background: #ecfeff;
+}
+
+.chat-row.from-ai .bubble {
+  background: #fef2f2;
+}
+
+.meta {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 2px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.time {
+  font-weight: 400;
+}
+
+/* -----------------------------------------------------------
+   CONTENT
+------------------------------------------------------------*/
+
+.text {
+  line-height: 1.5;
+}
+
+.text a {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.text a:hover {
+  text-decoration: none;
+}
+
+/* -----------------------------------------------------------
+   TYPING INDICATOR
+------------------------------------------------------------*/
+
+.typing-row .typing-bubble {
+  background: #fef2f2;
+}
+
+.typing-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  background: #9ca3af;
+  border-radius: 999px;
+  animation: typing 1s infinite ease-in-out;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typing {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  40% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+/* -----------------------------------------------------------
+   AUDIT PANEL
+------------------------------------------------------------*/
+
+.audit-log {
+  margin-top: 10px;
+  font-size: 0.8rem;
+}
+
+.audit-log ul {
+  padding-left: 1.1rem;
+  margin: 0;
+}
+
+.audit-log li {
+  margin-bottom: 6px;
+}
+
+.audit-log a {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+/* -----------------------------------------------------------
+   INPUT
+------------------------------------------------------------*/
+
+.query-field {
+  width: 100%;
+}
+
+.chat-input {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 10px;
+}
+
+.loading-bar {
+  margin-top: 6px;
+}
+
+.error-banner {
+  margin-top: 6px;
+  background: #fef2f2;
+  color: #b91c1c;
+  padding: 6px 8px;
+  border-radius: 6px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
