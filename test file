@@ -1,142 +1,97 @@
-triggerAction(action: ActionResult) {
-  if (action.actionType === 'link' && action.url) {
-    window.open(action.url, '_blank', 'noopener');
-  } else {
-    console.log('Execute workflow action:', action.payload || action.label);
-  }
+# Onboarding Engine – Run Guide
 
-  const entry: AuditEntry = {
-    kind: 'action',
-    label: action.label,
-    url: action.url ?? null,
-    timestamp: new Date().toISOString(),
-  };
+## Prerequisites
 
-  this.auditLog.update(list => [entry, ...list]);
+### 1. Install Node.js (LTS)
+Download from: https://nodejs.org
 
-  this.snackBar.open(`Mock action executed: ${action.label}`, 'OK', {
-    duration: 2500,
-  });
-}
+Verify:
+node -v  
+npm -v
 
+---
 
-private wireUpLinkTracking() {
-  const el = this.chatThreadRef?.nativeElement;
-  if (!el) return;
+### 2. Install Angular CLI (global)
+npm install -g @angular/cli
 
-  el.querySelectorAll('a[data-audit]').forEach(a => {
-    if ((a as any)._auditWired) return;
-    (a as any)._auditWired = true;
+Verify:
+ng version
 
-    a.addEventListener('click', (evt) => {
-      const target = evt.currentTarget as HTMLAnchorElement;
-      const label = target.dataset['audit'] || target.innerText || 'link';
+---
 
-      const log = `✓ Link clicked: "${label}" — ${new Date().toLocaleTimeString()}`;
-      this.auditLog.update(list => [log, ...list]);
-    });
-  });
-}
+### 3. Install Python (for serving built files)
+Download from: https://www.python.org
 
+Verify:
+python --version
 
+---
 
-a.addEventListener('click', (evt) => {
-  const target = evt.currentTarget as HTMLAnchorElement;
-  const label = target.dataset['audit'] || target.innerText || 'link';
+## Run Application (Mock Mode – Default)
 
-  const entry: AuditEntry = {
-    kind: 'link',
-    label,
-    url: target.href,
-    timestamp: new Date().toISOString(),
-  };
+### 1. Install dependencies
+npm install
 
-  this.auditLog.update(list => [entry, ...list]);
-});
+### 2. Start Angular dev server
+ng serve
 
+### 3. Open in browser
+http://localhost:4200
 
+Mock data will be used automatically (no backend needed).
 
+---
 
-<div class="audit-log">
-  <p class="small" *ngIf="!auditLog().length">No actions yet.</p>
+## Switch to Real API
 
-  <ul *ngIf="auditLog().length">
-    <li *ngFor="let entry of auditLog()">
-      <!-- left icon depending on type -->
-      <mat-icon class="audit-icon" *ngIf="entry.kind === 'action'">bolt</mat-icon>
-      <mat-icon class="audit-icon" *ngIf="entry.kind === 'link'">link</mat-icon>
+Edit:
 
-      <!-- main text -->
-      <span class="audit-text">
-        <ng-container [ngSwitch]="entry.kind">
-          <ng-container *ngSwitchCase="'action'">
-            Action: {{ entry.label }}
-          </ng-container>
-          <ng-container *ngSwitchCase="'link'">
-            Link clicked: "{{ entry.label }}"
-          </ng-container>
-        </ng-container>
-        —
-        <span class="audit-time">
-          {{ entry.timestamp | date: 'shortTime' }}
-        </span>
-      </span>
+src/environments/environment.ts
 
-      <!-- clickable "open" icon if URL exists -->
-      <button
-        *ngIf="entry.url"
-        mat-icon-button
-        class="audit-open-btn"
-        type="button"
-        [matTooltip]="'Open ' + entry.label"
-        (click)="openAuditEntry(entry)"
-      >
-        <mat-icon>open_in_new</mat-icon>
-      </button>
-    </li>
-  </ul>
-</div>
+Set:
+useMock: false  
+baseUrl: "https://your-api-endpoint"
 
+Restart dev server:
 
+ng serve
 
-openAuditEntry(entry: AuditEntry) {
-  if (!entry.url) return;
-  window.open(entry.url, '_blank', 'noopener');
-}
+---
 
+## Build for Production
 
+ng build --configuration production
 
-.audit-log ul {
-  list-style: none;
-  padding-left: 0;
-  margin: 0;
-}
+Output folder:
 
-.audit-log li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.78rem;
-  padding: 4px 0;
-}
+dist/<project-name>/
 
-.audit-icon {
-  font-size: 16px;
-  color: #9ca3af;
-}
+---
 
-.audit-text {
-  flex: 1;
-  color: #374151;
-}
+## Run App Without Angular / Node
 
-.audit-time {
-  color: #9ca3af;
-}
+You can run the built app using only Python:
 
-.audit-open-btn {
-  margin-left: 4px;
-}
+cd dist/<project-name>  
+python -m http.server 4200
 
+Open in browser:
 
+http://localhost:4200
 
+---
+
+## Quick Command Reference
+
+### Install
+npm install
+
+### Run development server
+ng serve
+
+### Build production bundle
+ng build --configuration production
+
+### Run built app using Python
+cd dist/<project-name>  
+python -m http.server 4200
