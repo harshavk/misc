@@ -1,0 +1,141 @@
+[
+    {
+        "id": "E12345",
+        "name": "John Doe",
+        "role": "Software Engineer",
+        "location": "Hyderabad",
+        "startDate": "2025-12-01",
+        "status": "In Progress",
+        "progress": 48,
+        "avatarColor": "#fce7e7",
+        "initial": "J",
+        "email": "john.doe@company.com",
+        "phone": "+91 98765 43210",
+        "lanId": "jdoe_01",
+        "laptopStatus": "Shipped",
+        "buddyName": "Sarah Smith",
+        "benefitsStatus": "Pending",
+        "trainingProgress": 35,
+        "goalsSet": false,
+        "timesheetPending": true,
+        "tasks": {
+            "preStart": [
+                {
+                    "label": "Order Laptop & Headset",
+                    "done": true
+                },
+                {
+                    "label": "Generate LAN ID",
+                    "done": true
+                },
+                {
+                    "label": "Assign Onboarding Buddy",
+                    "done": true
+                }
+            ],
+            "firstThreeDays": [
+                {
+                    "label": "Verify I-9 Documents",
+                    "done": false
+                },
+                {
+                    "label": "Review Attendance & Time Tracking",
+                    "done": false
+                },
+                {
+                    "label": "Team Intro / Welcome Lunch",
+                    "done": false
+                }
+            ],
+            "weekOnePlus": [
+                {
+                    "label": "Set Performance Goals (Workday)",
+                    "done": false
+                },
+                {
+                    "label": "Discuss Recognition Preferences",
+                    "done": false
+                },
+                {
+                    "label": "Enroll in Benefits (30 Days)",
+                    "done": false
+                }
+            ]
+        }
+    },
+    {
+        "id": "E12346",
+        "name": "Alice Kumar",
+        "role": "QA Engineer",
+        "location": "Bangalore",
+        "startDate": "2025-12-03",
+        "status": "In Progress",
+        "progress": 26,
+        "avatarColor": "#dbeafe",
+        "initial": "A",
+        "email": "alice.k@company.com",
+        "phone": "+91 98765 12345",
+        "laptopStatus": "Processing",
+        "benefitsStatus": "Pending",
+        "trainingProgress": 10,
+        "goalsSet": false,
+        "timesheetPending": false,
+        "tasks": {
+            "preStart": [
+                {
+                    "label": "Order Laptop",
+                    "done": true
+                },
+                {
+                    "label": "LAN ID",
+                    "done": false
+                }
+            ],
+            "firstThreeDays": [
+                {
+                    "label": "I-9 Verify",
+                    "done": false
+                }
+            ],
+            "weekOnePlus": [
+                {
+                    "label": "Benefits",
+                    "done": false
+                }
+            ]
+        }
+    }
+]
+
+-- model
+export interface Employee {
+    id: string;
+    name: string;
+    role: string;
+    location: string;
+    startDate: string;
+    status: 'In Progress' | 'Not Started' | 'Completed';
+    progress: number;
+    avatarColor: string;
+    initial: string;
+    email: string;
+    phone: string;
+
+    // --- NEW FIELDS BASED ON DOCS ---
+    lanId?: string;
+    buddyName?: string;
+    laptopStatus: 'Not Ordered' | 'Processing' | 'Shipped' | 'Delivered';
+
+    // HR & Performance Specifics
+    benefitsStatus: 'Pending' | 'Enrolled' | 'Overdue'; // 30-day window
+    trainingProgress: number; // "Develop You" status
+    goalsSet: boolean; // "Workday" goals status
+    timesheetPending: boolean; // For "Time Check-in" review
+
+    // Categorized Tasks (Updated Phases)
+    tasks: {
+        preStart: { label: string; done: boolean }[];
+        firstThreeDays: { label: string; done: boolean }[]; // Renamed from dayOne
+        weekOnePlus: { label: string; done: boolean }[];    // Renamed from weekOne
+    };
+}
