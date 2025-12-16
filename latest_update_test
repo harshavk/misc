@@ -1,0 +1,558 @@
+l<div class="app-root">
+
+    <div class="mobile-nav-toolbar">
+        <mat-button-toggle-group [value]="mobileView()" (change)="setMobileView($event.value)" appearance="legacy">
+            <mat-button-toggle value="history"><mat-icon>history</mat-icon></mat-button-toggle>
+            <mat-button-toggle value="chat">Chat</mat-button-toggle>
+            <mat-button-toggle value="audit"><mat-icon>fact_check</mat-icon></mat-button-toggle>
+        </mat-button-toggle-group>
+    </div>
+
+    @if (isInitializing()) {
+    <div class="wf-container skeleton-mode">
+
+        <section class="wf-panel wf-context">
+            <div class="sk-header">
+                <div class="sk-btn w-100"></div>
+            </div>
+            <div class="sk-list">
+                @for (i of [1,2,3,4,5]; track i) {
+                <div class="sk-row-simple">
+                    <div class="sk-circle-sm"></div>
+                    <div class="sk-line w-70"></div>
+                </div>
+                }
+            </div>
+        </section>
+
+        <section class="wf-panel wf-center">
+            <div class="sk-chat-hero">
+                <div class="sk-avatar-lg"></div>
+                <div class="sk-line w-40 mb-2"></div>
+                <div class="sk-line w-30"></div>
+            </div>
+            <div class="sk-chat-input">
+                <div class="sk-bar"></div>
+            </div>
+        </section>
+
+        <section class="wf-panel wf-right">
+            <div class="sk-header">
+                <div class="sk-title w-50"></div>
+            </div>
+            <div class="sk-grid-2">
+                @for (i of [1,2,3,4]; track i) {
+                <div class="sk-tile"></div>
+                }
+            </div>
+            <div class="sk-divider"></div>
+            <div class="sk-list">
+                @for (i of [1,2,3]; track i) {
+                <div class="sk-row-simple"></div>
+                }
+            </div>
+        </section>
+
+    </div>
+    }
+
+    @if (!isInitializing()) {
+    <div class="wf-container">
+
+        <section class="wf-panel wf-context" [class.mobile-hidden]="mobileView() !== 'history'">
+            <app-chat-sidebar [chatHistory]="chatHistory()" [currentThreadId]="currentThreadId()"
+                (selectThread)="reuseHistoryItem($event)" (deleteThread)="removeThread($event)"
+                (clearHistory)="clearHistory()" (newChat)="startNewChat()">
+            </app-chat-sidebar>
+        </section>
+
+        <section class="wf-panel wf-center" [class.mobile-hidden]="mobileView() !== 'chat'">
+            <app-chat-area [userName]="currentUser()?.name || 'Employee'" [messages]="chatMessages()"
+                [isTyping]="isAiTyping()" [isLoading]="isLoading()" [isListening]="isListening()" [error]="error()"
+                [helperHint]="currentHelperHint()" [inputStatus]="inputStatus()" [queryControl]="queryControl"
+                [suggestedActions]="suggestedActions()" [isManager]="isManager()" (submitQuery)="submitQuery()"
+                (toggleMic)="toggleMic()" (exportChat)="exportConversation()"
+                (contentLinkClick)="onContentLinkClick($event.msg, $event.event)"
+                (toolPayloadClick)="onToolPayloadClick($event.msg, $event.tool, $event.event)"
+                (actionClick)="handleToolkitAction($event)" (messageFeedback)="handleMessageFeedback($event)">
+            </app-chat-area>
+        </section>
+
+        <section class="wf-panel wf-right" [class.mobile-hidden]="mobileView() !== 'audit'">
+            <app-audit-panel [userName]="currentUser()?.name || 'User'" [isManager]="isManager()"
+                (actionClick)="handleToolkitAction($event)">
+            </app-audit-panel>
+        </section>
+
+    </div>
+    }
+</div>
+
+
+
+
+// ... imports
+
+@Component({
+  // ... selector/template
+})
+export class Mybuddy implements OnInit, OnDestroy {
+  // ... existing code ...
+
+  // ✅ NEW: Handle Feedback Update
+  handleMessageFeedback(event: { index: number, type: 'like' | 'dislike' | null }) {
+    this.chatMessages.update(msgs => {
+      const newMsgs = [...msgs];
+      // Create a new object reference to trigger change detection
+      newMsgs[event.index] = { 
+        ...newMsgs[event.index], 
+        feedback: event.type 
+      };
+      return newMsgs;
+    });
+    
+    // The existing effect() in constructor will detect this change 
+    // and automatically save the updated feedback to LocalStorage.
+  }
+
+  // ... rest of the code ...
+}
+
+
+
+/* ... existing styles ... */
+
+.bubble-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 80%;
+}
+
+.ai-bubble {
+  padding-bottom: 4px; /* Space for actions */
+}
+
+/* ✅ NEW: Bubble Actions Footer */
+.bubble-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(0,0,0,0.05);
+}
+
+.action-btn {
+  width: 28px !important;
+  height: 28px !important;
+  line-height: 28px !important;
+  padding: 0 !important;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.action-btn:hover {
+  background-color: rgba(0,0,0,0.05);
+  opacity: 1;
+}
+
+.action-btn .mat-icon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+}
+
+.divider-v {
+  width: 1px;
+  height: 16px;
+  background-color: var(--border-color);
+  margin: 0 4px;
+}
+
+/* Active States */
+.active-like {
+  color: #16a34a !important; /* Green */
+  opacity: 1 !important;
+}
+
+.active-dislike {
+  color: #dc2626 !important; /* Red */
+  opacity: 1 !important;
+}
+
+/* Dark Mode Support */
+:host-context(.dark-theme) .bubble-actions {
+  border-top-color: rgba(255,255,255,0.1);
+}
+:host-context(.dark-theme) .action-btn:hover {
+  background-color: rgba(255,255,255,0.1);
+}
+
+
+import { 
+  Component, 
+  EventEmitter, 
+  Input, 
+  Output, 
+  ElementRef, 
+  ViewChild, 
+  ChangeDetectionStrategy, 
+  OnChanges, 
+  SimpleChanges, 
+  AfterViewInit, 
+  OnDestroy,
+  inject 
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ReactiveFormsModule, FormControl } from '@angular/forms';
+
+// Material Imports
+import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
+import { MatInputModule } from '@angular/material/input';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSnackBar } from '@angular/material/snack-bar'; // For Copy Feedback
+
+import { ThreadMessage } from '../../../../core/models/ai-thread.models';
+import { ActionResult } from '../../../../core/models/ai-search.models';
+
+@Component({
+  selector: 'app-chat-area',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    MatIconModule,
+    MatButtonModule,
+    MatInputModule,
+    MatFormFieldModule,
+    MatTooltipModule,
+    MatChipsModule,
+    MatProgressSpinnerModule
+  ],
+  templateUrl: './chat-area.html',
+  styleUrls: ['./chat-area.css'],
+  changeDetection: ChangeDetectionStrategy.OnPush
+})
+export class ChatAreaComponent implements OnChanges, AfterViewInit, OnDestroy {
+  private snackBar = inject(MatSnackBar);
+
+  @Input() messages: ThreadMessage[] = [];
+  @Input() isTyping = false;
+  @Input() isLoading = false;
+  @Input() isListening = false;
+  @Input() error: string | null = null;
+  @Input() helperHint = '';
+  @Input() inputStatus = '';
+  @Input() queryControl!: FormControl<string>;
+  @Input() userName: string = 'Employee';
+  @Input() suggestedActions: ActionResult[] = [];
+  @Input() isManager: boolean = false;
+
+  @Output() submitQuery = new EventEmitter<void>();
+  @Output() toggleMic = new EventEmitter<void>();
+  @Output() exportChat = new EventEmitter<void>();
+  @Output() contentLinkClick = new EventEmitter<{ msg: ThreadMessage, event: MouseEvent }>();
+  @Output() toolPayloadClick = new EventEmitter<{ msg: ThreadMessage, tool: any, event: MouseEvent }>();
+  @Output() actionClick = new EventEmitter<string>();
+  
+  // ✅ NEW: Feedback Output
+  @Output() messageFeedback = new EventEmitter<{ index: number, type: 'like' | 'dislike' | null }>();
+
+  @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
+  private isNearBottom = true; 
+  private scrollListener: any;
+
+  readonly capabilities = [
+    { label: 'Order new hire equipment', icon: 'laptop_mac', query: 'How do I order a laptop and headset for my new hire?' },
+    { label: 'Assign an onboarding buddy', icon: 'group_add', query: 'What is the process to assign a buddy to a new employee?' },
+    { label: 'Set goals in Workday', icon: 'flag', query: 'Guide me through setting performance goals in Workday.' },
+    { label: 'Request Cloud/LAN Access', icon: 'vpn_key', query: 'How do I request Cloud access and check LAN ID status?' },
+    { label: 'View Benefits Summary', icon: 'health_and_safety', query: 'What benefits information should I review with the new hire?' }
+  ];
+
+  // --- Scroll Logic (Kept from previous fix) ---
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['messages']) {
+      const prev = changes['messages'].previousValue || [];
+      const curr = changes['messages'].currentValue || [];
+      const lastMsg = curr[curr.length - 1];
+      if (lastMsg?.type === 'human') { this.scrollToBottom(); return; }
+      if (prev.length === 0 && curr.length > 0) { this.scrollToBottom(); return; }
+      if (this.isNearBottom) { this.scrollToBottom(); }
+    }
+  }
+
+  ngAfterViewInit() {
+    if (this.scrollContainer?.nativeElement) {
+      this.scrollListener = () => this.checkScrollPosition();
+      this.scrollContainer.nativeElement.addEventListener('scroll', this.scrollListener);
+      this.scrollToBottom();
+    }
+  }
+
+  ngOnDestroy() {
+    if (this.scrollContainer?.nativeElement && this.scrollListener) {
+      this.scrollContainer.nativeElement.removeEventListener('scroll', this.scrollListener);
+    }
+  }
+
+  private checkScrollPosition() {
+    const el = this.scrollContainer.nativeElement;
+    const position = el.scrollTop + el.clientHeight;
+    this.isNearBottom = position >= el.scrollHeight - 100;
+  }
+
+  private scrollToBottom(): void {
+    setTimeout(() => {
+      try {
+        const el = this.scrollContainer.nativeElement;
+        el.scrollTop = el.scrollHeight;
+        this.isNearBottom = true;
+      } catch (err) { }
+    }, 0);
+  }
+
+  // --- NEW FEATURES ---
+
+  copyToClipboard(content: string) {
+    navigator.clipboard.writeText(content).then(() => {
+      this.snackBar.open('Copied to clipboard', '', { duration: 1500, verticalPosition: 'top' });
+    });
+  }
+
+  onFeedback(index: number, type: 'like' | 'dislike') {
+    // Toggle logic: if clicking the same icon again, remove feedback (null)
+    const current = this.messages[index].feedback;
+    const newFeedback = current === type ? null : type;
+    this.messageFeedback.emit({ index, type: newFeedback });
+  }
+
+  // --- BOILERPLATE ---
+  onKeydownEnter(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.submitQuery.emit(); }
+  }
+  triggerAction(query: string) { this.queryControl.setValue(query); this.submitQuery.emit(); }
+  trackMessage(index: number, msg: ThreadMessage): string { return `${msg.type}-${index}-${msg.content?.slice(0, 20)}`; }
+}
+
+ai-thread.models.ts
+--------------------
+export interface ThreadMessage {
+    type: 'human' | 'ai';
+    content: string;
+    tool_call: any | null;
+    timestamp?: string;
+    localTimestamp?: string;
+    
+    // ✅ NEW: Tracks user reaction
+    feedback?: 'like' | 'dislike' | null; 
+}
+
+export interface AiThreadResponse {
+    reply?: string;
+    thread_id: string;
+    messages: ThreadMessage[];
+    timestamp?: string;
+}
+
+export interface AiThreadRequest {
+    message: string;
+    thread_id: string;
+    metadata?: Record<string, unknown>;
+    actor_id?: string;
+}
+
+
+<div class="chat-header">
+    <div class="export-slot">
+        <button mat-icon-button type="button" class="export-btn" matTooltip="Export conversation"
+            (click)="exportChat.emit()">
+            <mat-icon>download</mat-icon>
+        </button>
+    </div>
+</div>
+
+<div class="answers-body custom-scroll" #scrollContainer>
+
+    @if (messages.length > 0) {
+    <div class="chat-thread">
+        @for (msg of messages; track trackMessage($index, msg)) {
+        <div class="chat-row" [ngClass]="{'from-human': msg.type === 'human', 'from-ai': msg.type === 'ai'}">
+
+            <div class="avatar">
+                <mat-icon>{{ msg.type === 'human' ? 'person' : 'smart_toy' }}</mat-icon>
+            </div>
+
+            <div class="bubble">
+                <div class="meta">
+                    <span class="role">{{ msg.type === 'human' ? 'You' : 'AI assistant' }}</span>
+                    @if (msg.localTimestamp) {
+                    <span class="time">{{ msg.localTimestamp | date: 'shortTime' }}</span>
+                    }
+                </div>
+
+                <div class="text">
+                    @if (msg.type === 'human') {
+                        {{ msg.content }}
+                    }
+                    
+                    @if (msg.type === 'ai') {
+                        <div class="rich-text" [innerHTML]="msg.content"
+                            (click)="contentLinkClick.emit({msg: msg, event: $event})">
+                        </div>
+                    }
+
+                    @if (msg.tool_call; as tool) {
+                        <div class="tool-call">
+                            <div class="tool-header">
+                                ⚡ <span class="tool-name">{{ (tool.name || '').replaceAll('_', ' ') }}</span>
+                            </div>
+                            @if (tool.description) {
+                            <div class="tool-description">{{ tool.description }}</div>
+                            }
+                            @if (tool.payload) {
+                            <div class="tool-action" [innerHTML]="tool.payload"
+                                (click)="toolPayloadClick.emit({msg: msg, tool: tool, event: $event})"></div>
+                            }
+                        </div>
+                    }
+
+                    @if (msg.type === 'ai') {
+                        <div class="bubble-actions">
+                            <button mat-icon-button class="action-btn small-btn" 
+                                    (click)="copyToClipboard(msg.content)" 
+                                    matTooltip="Copy">
+                                <mat-icon>content_copy</mat-icon>
+                            </button>
+                            
+                            <div class="divider-v"></div>
+
+                            <button mat-icon-button class="action-btn small-btn" 
+                                    [class.active-like]="msg.feedback === 'like'"
+                                    (click)="onFeedback($index, 'like')"
+                                    matTooltip="Helpful">
+                                <mat-icon>{{ msg.feedback === 'like' ? 'thumb_up' : 'thumb_up_off_alt' }}</mat-icon>
+                            </button>
+
+                            <button mat-icon-button class="action-btn small-btn" 
+                                    [class.active-dislike]="msg.feedback === 'dislike'"
+                                    (click)="onFeedback($index, 'dislike')"
+                                    matTooltip="Not Helpful">
+                                <mat-icon>{{ msg.feedback === 'dislike' ? 'thumb_down' : 'thumb_down_off_alt' }}</mat-icon>
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+        }
+
+        @if (isTyping) {
+        <div class="chat-row from-ai typing-row">
+            <div class="avatar"><mat-icon>smart_toy</mat-icon></div>
+            <div class="bubble typing-bubble">
+                <div class="typing-dots"><span></span><span></span><span></span></div>
+            </div>
+        </div>
+        }
+
+        @if (!isLoading && suggestedActions.length > 0) {
+        <div class="suggestions-row fade-in">
+            <div class="suggestion-label">Suggested:</div>
+            <mat-chip-set>
+                @for (action of suggestedActions; track action.label) {
+                <mat-chip (click)="actionClick.emit(action.label)">
+                    {{ action.label }}
+                </mat-chip>
+                }
+            </mat-chip-set>
+        </div>
+        }
+    </div>
+    } @else {
+    <div class="empty-state-container">
+        <div class="welcome-header">
+            <div class="ai-avatar-medium">
+                <mat-icon>smart_toy</mat-icon>
+            </div>
+            <div class="welcome-text">
+                <h2>Hello, {{ userName }}</h2>
+                <p>I'm ready to assist. What would you like to do?</p>
+            </div>
+        </div>
+
+        <div class="capabilities-section">
+            <div class="grid-label">SUGGESTED ACTIONS</div>
+            <div class="capabilities-grid">
+                @for (cap of capabilities; track cap.label) {
+                <button class="action-tile" (click)="triggerAction(cap.query)">
+                    <div class="tile-icon" [ngClass]="cap.icon === 'bolt' ? 'blue' : 'red'">
+                        <mat-icon>{{ cap.icon }}</mat-icon>
+                    </div>
+                    <div class="tile-content">
+                        <span class="tile-title">{{ cap.label }}</span>
+                        <span class="tile-desc">Click to start</span>
+                    </div>
+                    <mat-icon class="tile-arrow">arrow_forward</mat-icon>
+                </button>
+                }
+            </div>
+        </div>
+
+        <div class="prompts-section">
+            <div class="grid-label">OR ASK ME ABOUT...</div>
+            <div class="chip-row">
+                <span class="query-chip" (click)="triggerAction('What is my laptop status?')">💻 Laptop Status</span>
+                <span class="query-chip" (click)="triggerAction('Who is my buddy?')">👥 My Buddy</span>
+                <span class="query-chip" (click)="triggerAction('Show my team goals')">🎯 Team Goals</span>
+                <span class="query-chip" (click)="triggerAction('HR Policy on Remote Work')">🏠 Remote Policy</span>
+            </div>
+        </div>
+    </div>
+    }
+</div>
+
+<div class="chat-input">
+    <div class="input-hints">
+        @if (!queryControl.value) {
+        <div class="hint-line">
+            <mat-icon class="hint-icon">lightbulb</mat-icon><span>Try: {{ helperHint }}</span>
+        </div>
+        }
+    </div>
+
+    <form (submit)="$event.preventDefault(); submitQuery.emit()">
+        <mat-form-field class="query-field" appearance="outline" hideRequiredMarker="true">
+            <mat-label>Ask your onboarding assistant</mat-label>
+            <textarea matInput [formControl]="queryControl" rows="2" (keydown)="onKeydownEnter($event)"></textarea>
+
+            <div matSuffix class="send-controls">
+                <button mat-icon-button type="button" class="mic-btn" [color]="isListening ? 'primary' : undefined"
+                    (click)="toggleMic.emit()" matTooltip="Use voice input">
+                    <mat-icon>{{ isListening ? 'mic' : 'mic_none' }}</mat-icon>
+                </button>
+
+                <button mat-icon-button type="button" matTooltip="Send message" (click)="submitQuery.emit()"
+                    [disabled]="isLoading || !queryControl.value">
+                    @if (isLoading) {
+                    <mat-spinner diameter="24"></mat-spinner>
+                    } @else {
+                    <mat-icon>send</mat-icon>
+                    }
+                </button>
+            </div>
+        </mat-form-field>
+    </form>
+
+    @if (error) {
+    <div class="error-banner">
+        <mat-icon>error_outline</mat-icon><span>{{ error }}</span>
+    </div>
+    }
+</div>
+
