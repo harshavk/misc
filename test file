@@ -1,668 +1,163 @@
-import { ChangeDetectionStrategy, Component, inject, signal, computed, OnInit, OnDestroy, effect } from '@angular/core';
+import { 
+  Component, 
+  EventEmitter, 
+  Input, 
+  Output, 
+  ElementRef, 
+  ViewChild, 
+  ChangeDetectionStrategy, 
+  OnChanges, 
+  SimpleChanges, 
+  AfterViewInit, 
+  OnDestroy 
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormControl, Validators, ReactiveFormsModule } from '@angular/forms';
-import { MatButtonToggleModule } from '@angular/material/button-toggle';
-import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { ReactiveFormsModule, FormControl } from '@angular/forms';
+
+// Material Imports
 import { MatIconModule } from '@angular/material/icon';
-import { Router, ActivatedRoute } from '@angular/router';
+import { MatButtonModule } from '@angular/material/button';
+import { MatInputModule } from '@angular/material/input';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 
-// Components
-import { ChatSidebarComponent } from './components/chat-sidebar/chat-sidebar';
-import { ChatAreaComponent } from './components/chat-area/chat-area';
-import { AuditPanelComponent } from './components/audit-panel/audit-panel';
-
-// Models & Services
-import { AiSearchService } from '../../core/services/ai-search.service';
-import { AuthService } from '../../core/services/auth.service';
-import { ThreadMessage } from '../../core/models/ai-thread.models';
-import { ChatHistoryItem, AuditEntry, AiSearchResponse, ActionResult } from '../../core/models/ai-search.models';
-import { Role } from '../../core/models/role.enum';
+import { ThreadMessage } from '../../../../core/models/ai-thread.models';
+import { ActionResult } from '../../../../core/models/ai-search.models';
 
 @Component({
-  selector: 'app-mybuddy',
+  selector: 'app-chat-area',
   standalone: true,
   imports: [
     CommonModule,
     ReactiveFormsModule,
-    MatButtonToggleModule,
     MatIconModule,
-    MatSnackBarModule,
-    ChatSidebarComponent,
-    ChatAreaComponent,
-    AuditPanelComponent
+    MatButtonModule,
+    MatInputModule,
+    MatFormFieldModule,
+    MatTooltipModule,
+    MatChipsModule,
+    MatProgressSpinnerModule
   ],
-  templateUrl: './mybuddy.html',
-  styleUrls: ['./mybuddy.css'],
-  changeDetection: ChangeDetectionStrategy.OnPush,
+  templateUrl: './chat-area.html',
+  styleUrls: ['./chat-area.css'],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class Mybuddy implements OnInit, OnDestroy {
-  private readonly ai = inject(AiSearchService);
-  private readonly snackBar = inject(MatSnackBar);
-  private readonly auth = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
+export class ChatAreaComponent implements OnChanges, AfterViewInit, OnDestroy {
+  @Input() messages: ThreadMessage[] = [];
+  @Input() isTyping = false;
+  @Input() isLoading = false;
+  @Input() isListening = false;
+  @Input() error: string | null = null;
+  @Input() helperHint = '';
+  @Input() inputStatus = '';
+  @Input() queryControl!: FormControl<string>;
+  @Input() userName: string = 'Employee';
 
-  readonly currentUser = computed(() => this.auth.currentUser());
+  @Input() suggestedActions: ActionResult[] = [];
+  @Input() isManager: boolean = false;
 
-  // --- LOADING STATE ---
-  readonly isInitializing = signal(true);
-  private readonly HTML_TAG_REGEX = /<\/?[a-z][\s\S]*>/i;
+  @Output() submitQuery = new EventEmitter<void>();
+  @Output() toggleMic = new EventEmitter<void>();
+  @Output() exportChat = new EventEmitter<void>();
 
-  // Voice Variables
-  private recognition?: any;
-  private silenceTimer: any;
-  private typingTimer: any = null;
+  @Output() contentLinkClick = new EventEmitter<{ msg: ThreadMessage, event: MouseEvent }>();
+  @Output() toolPayloadClick = new EventEmitter<{ msg: ThreadMessage, tool: any, event: MouseEvent }>();
+  @Output() actionClick = new EventEmitter<string>();
 
-  // --- STATE SIGNALS ---
-  readonly mobileView = signal<'history' | 'chat' | 'audit'>('chat');
-  readonly queryControl = new FormControl<string>('', {
-    nonNullable: true,
-    validators: [Validators.required, Validators.minLength(3)],
-  });
+  @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
 
-  readonly isLoading = signal(false);
-  readonly error = signal<string | null>(null);
-  readonly isManager = computed(() =>
-    this.auth.currentUser()?.roles.includes(Role.Manager) ?? false
-  );
-  readonly isAiTyping = signal(false);
-  readonly isListening = signal(false);
+  // Track if the user is currently "sticking" to the bottom of the chat
+  private isNearBottom = true; 
+  private scrollListener: any;
 
-  // Chat Data
-  readonly chatMessages = signal<ThreadMessage[]>([]);
-  readonly currentThreadId = signal<string>('onboarding-session-1');
-  readonly lastResponse = signal<AiSearchResponse | null>(null);
-  readonly chatHistory = signal<ChatHistoryItem[]>([]);
-  readonly auditLog = signal<AuditEntry[]>([]);
-
-  readonly isMockMode = this.ai.isMockMode();
-  readonly suggestedActions = computed<ActionResult[]>(() => this.lastResponse()?.actions ?? []);
-
-  // Hints
-  private helperIntervalId: any = null;
-  private readonly helperHints = [
-    '“Before first day” – checklist for a new hire',
-    '“Order laptop for new hire” – equipment guidance',
-    '“What is left for first 3 days?”',
-    '“Confirm Workday details for a new joiner”',
+  readonly capabilities = [
+    { label: 'Order new hire equipment', icon: 'laptop_mac', query: 'How do I order a laptop and headset for my new hire?' },
+    { label: 'Assign an onboarding buddy', icon: 'group_add', query: 'What is the process to assign a buddy to a new employee?' },
+    { label: 'Set goals in Workday', icon: 'flag', query: 'Guide me through setting performance goals in Workday.' },
+    { label: 'Request Cloud/LAN Access', icon: 'vpn_key', query: 'How do I request Cloud access and check LAN ID status?' },
+    { label: 'View Benefits Summary', icon: 'health_and_safety', query: 'What benefits information should I review with the new hire?' }
   ];
-  readonly currentHelperIndex = signal(0);
-  readonly currentHelperHint = computed(() => this.helperHints[this.currentHelperIndex()] ?? '');
 
-  readonly inputStatus = computed(() => {
-    if (this.isListening()) return 'Listening... (Speak now)';
-    if (this.isLoading()) return 'Thinking about your last message…';
-    const roleLabel = this.isManager() ? 'manager' : 'employee';
-    return `Assistant ready for ${roleLabel} questions`;
-  });
+  // ✅ 1. DETECT CHANGES (Instead of AfterViewChecked)
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['messages']) {
+      const prev = changes['messages'].previousValue || [];
+      const curr = changes['messages'].currentValue || [];
 
-  // ✅ CONSTRUCTOR: EFFECT FOR AUTO-SAVE
-  constructor() {
-    // 1. Auto-save Messages whenever they change
-    effect(() => {
-      const msgs = this.chatMessages();
-      const tid = this.currentThreadId();
-      if (msgs.length > 0) {
-        this.ai.saveHistory(tid, msgs).subscribe();
+      // Case A: User just sent a message (always scroll down)
+      const lastMsg = curr[curr.length - 1];
+      if (lastMsg?.type === 'human') {
+        this.scrollToBottom();
+        return;
       }
-    });
 
-    // 2. Auto-save Sidebar History whenever it changes
-    effect(() => {
-      const history = this.chatHistory();
-      const userId = this.currentUser()?.id || 'anon';
-      if (history.length > 0) {
-        localStorage.setItem(`wf_sidebar_${userId}`, JSON.stringify(history));
+      // Case B: Initial Load (0 -> N messages)
+      if (prev.length === 0 && curr.length > 0) {
+        this.scrollToBottom();
+        return;
       }
-    });
+
+      // Case C: AI is typing or new message arrived
+      // Only scroll if user hasn't scrolled up to read history
+      if (this.isNearBottom) {
+        this.scrollToBottom();
+      }
+    }
   }
 
-  ngOnInit(): void {
-    // 1. Restore Sidebar List from Storage
-    this.restoreSidebarHistory();
+  // ✅ 2. SETUP SCROLL LISTENER
+  ngAfterViewInit() {
+    if (this.scrollContainer?.nativeElement) {
+      this.scrollListener = () => this.checkScrollPosition();
+      this.scrollContainer.nativeElement.addEventListener('scroll', this.scrollListener);
+      
+      // Initial scroll to bottom
+      this.scrollToBottom();
+    }
+  }
 
-    // 2. Load Active Thread Messages
-    this.loadActiveThread();
+  ngOnDestroy() {
+    if (this.scrollContainer?.nativeElement && this.scrollListener) {
+      this.scrollContainer.nativeElement.removeEventListener('scroll', this.scrollListener);
+    }
+  }
 
-    // 3. UI Initialization
+  // ✅ 3. TRACK USER SCROLL POSITION
+  private checkScrollPosition() {
+    const el = this.scrollContainer.nativeElement;
+    // Calculate if user is near bottom (within 100px)
+    const position = el.scrollTop + el.clientHeight;
+    const height = el.scrollHeight;
+    this.isNearBottom = position >= height - 100;
+  }
+
+  private scrollToBottom(): void {
+    // Use setTimeout to ensure the DOM has updated with the new message
     setTimeout(() => {
-      this.isInitializing.set(false);
-    }, 1500);
-
-    this.startHelperRotation();
-
-    // 4. Handle External Query Params
-    this.route.queryParams.subscribe(params => {
-      const incomingQuery = params['q'];
-      if (incomingQuery) {
-        this.queryControl.setValue(incomingQuery);
-        this.submitQuery();
-        this.router.navigate([], { queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true });
-      }
-    });
-  }
-
-  // --- HISTORY MANAGEMENT ---
-
-  private restoreSidebarHistory() {
-    const userId = this.currentUser()?.id || 'anon';
-    const raw = localStorage.getItem(`wf_sidebar_${userId}`);
-    if (raw) {
       try {
-        this.chatHistory.set(JSON.parse(raw));
-      } catch { /* ignore corruption */ }
+        const el = this.scrollContainer.nativeElement;
+        el.scrollTop = el.scrollHeight;
+        // Reset flag so we stay stuck to bottom
+        this.isNearBottom = true;
+      } catch (err) { }
+    }, 0);
+  }
+
+  onKeydownEnter(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      this.submitQuery.emit();
     }
   }
 
-  private loadActiveThread() {
-    this.isLoading.set(true);
-    // ✅ Load real persisted messages from Service
-    this.ai.loadHistory(this.currentThreadId()).subscribe({
-      next: (msgs) => {
-        this.chatMessages.set(msgs);
-        this.isLoading.set(false);
-      },
-      error: () => {
-        this.chatMessages.set([]);
-        this.isLoading.set(false);
-      }
-    });
+  triggerAction(query: string) {
+    this.queryControl.setValue(query);
+    this.submitQuery.emit();
   }
 
-  // --- MAIN ACTIONS ---
-
-  startNewChat(): void {
-    const newId = `thread-${Date.now()}`;
-    this.currentThreadId.set(newId);
-    this.chatMessages.set([]); // Clear UI
-    this.lastResponse.set(null);
-    this.error.set(null);
-    this.isAiTyping.set(false);
-    this.queryControl.setValue('');
-    if (window.innerWidth <= 1000) this.mobileView.set('chat');
-  }
-
-  clearHistory(): void {
-    // Clear in UI
-    this.chatHistory.set([]);
-    this.chatMessages.set([]);
-    this.lastResponse.set(null);
-    this.auditLog.set([]);
-
-    // Clear in Storage
-    this.ai.clearHistory(this.currentThreadId()).subscribe();
-    const userId = this.currentUser()?.id || 'anon';
-    localStorage.removeItem(`wf_sidebar_${userId}`);
-
-    // Reset ID
-    this.currentThreadId.set(`thread-${Date.now()}`);
-    this.snackBar.open('All history cleared', 'OK', { duration: 2000 });
-  }
-
-  reuseHistoryItem(item: ChatHistoryItem): void {
-    this.currentThreadId.set(item.id);
-    this.error.set(null);
-    this.isAiTyping.set(false);
-
-    // ✅ Load messages for this specific thread
-    this.loadActiveThread();
-
-    this.queryControl.setValue(item.query || '');
-    if (window.innerWidth <= 1000) this.mobileView.set('chat');
-  }
-
-  removeThread(threadId: string): void {
-    // Update UI List
-    this.chatHistory.update((items) => items.filter((i) => i.id !== threadId));
-
-    // Clear Storage for this thread
-    this.ai.clearHistory(threadId).subscribe();
-
-    if (this.currentThreadId() === threadId) this.startNewChat();
-    this.snackBar.open('Conversation removed', 'OK', { duration: 1800 });
-  }
-
-  // --- QUERY & API LOGIC ---
-
-  submitQuery(): void {
-    this.error.set(null);
-    if (this.queryControl.invalid) {
-      this.queryControl.markAsTouched();
-      this.error.set('Please enter at least 3 characters.');
-      return;
-    }
-    const query = this.queryControl.value.trim();
-    if (!query) return;
-
-    // 1. Optimistic UI Update
-    const userMsg: ThreadMessage = this.withLocalTimestamp({ type: 'human', content: query, tool_call: null });
-    this.chatMessages.update((list) => [...list, userMsg]);
-
-    this.isLoading.set(true);
-    this.isAiTyping.set(true);
-    this.queryControl.setValue('');
-
-    // 2. Call API (Service handles ID automatically, but we pass it just in case)
-    this.ai.search(query, this.currentThreadId(), { workflow: 'onboarding' }, this.currentUser()?.id)
-      .subscribe({
-        next: (res) => this.handleSearchSuccess(query, res),
-        error: (err) => this.handleSearchError(err),
-      });
-  }
-
-  private handleSearchSuccess(query: string, res: AiSearchResponse): void {
-    this.isLoading.set(false);
-    const threadId = res.threadId;
-
-    // Filter valid messages
-    const fromApi = (res.historyMessages || [])
-      .filter((m) => (m.type === 'human' || m.type === 'ai') && m.content !== '')
-      .map((m) => this.withLocalTimestamp(m));
-
-    setTimeout(() => {
-      this.lastResponse.set(res);
-      this.currentThreadId.set(threadId);
-
-      // Typing Effect Logic
-      const lastAiIndex = [...fromApi].map((m, i) => ({ m, i })).reverse().find((x) => x.m.type === 'ai')?.i;
-
-      if (lastAiIndex == null) {
-        this.chatMessages.set(fromApi);
-        this.isAiTyping.set(false);
-      } else {
-        const base = fromApi.slice(0, lastAiIndex);
-        const lastAi = fromApi[lastAiIndex];
-        this.isAiTyping.set(false);
-        this.startTypingEffect(lastAi, base);
-      }
-
-      // Update Sidebar List (Signal triggers Effect -> Saves to LocalStorage)
-      const msgCount = fromApi.length;
-      const lastMsgPreview = res.answers?.[0]?.content ?? '';
-      const preview = lastMsgPreview.length > 80 ? lastMsgPreview.slice(0, 80) + '…' : lastMsgPreview;
-      const nowIso = new Date().toISOString();
-
-      this.chatHistory.update((items) => {
-        const others = items.filter((i) => i.id !== threadId);
-        return [{ id: threadId, query: res.query, createdAt: nowIso, messagesCount: msgCount, lastPreview: preview, activityHint: 'Active' }, ...others];
-      });
-    }, 100);
-  }
-
-  private handleSearchError(err: any): void {
-    this.isLoading.set(false);
-    this.isAiTyping.set(false);
-    this.error.set(err?.message || 'Error calling AI');
-    this.snackBar.open(this.error()!, 'Dismiss', { duration: 4000 });
-  }
-
-  // --- BOILERPLATE / HELPERS ---
-
-  setMobileView(view: 'history' | 'chat' | 'audit'): void {
-    this.mobileView.set(view);
-  }
-
-  handleToolkitAction(actionQuery: string): void {
-    this.queryControl.setValue(actionQuery);
-    if (window.innerWidth <= 1000) this.mobileView.set('chat');
-    this.submitQuery();
-  }
-
-  onContentLinkClick(msg: ThreadMessage, event: MouseEvent): void {
-    const target = event.target as HTMLElement | null;
-    const anchor = target?.closest('a') as HTMLAnchorElement | null;
-    if (anchor) {
-      const entry: AuditEntry = { text: `✓ Opened: "${anchor.textContent}"`, href: anchor.href };
-      this.auditLog.update((list) => [entry, ...list]);
-    }
-  }
-
-  onToolPayloadClick(msg: ThreadMessage, tool: any, event: MouseEvent): void {
-    const entry: AuditEntry = { text: `✓ Action: ${tool?.name}`, href: '#' };
-    this.auditLog.update((list) => [entry, ...list]);
-  }
-
-  exportConversation() {
-    this.snackBar.open('Export triggered', 'OK');
-  }
-
-  private startTypingEffect(aiMessage: ThreadMessage, baseMessages: ThreadMessage[]): void {
-    const fullText = aiMessage.content || '';
-    // Skip typing for HTML or Tools
-    if (this.HTML_TAG_REGEX.test(fullText) || aiMessage.tool_call) {
-      this.chatMessages.set([...baseMessages, aiMessage]);
-      return;
-    }
-
-    let index = 0;
-    const workingMsg = { ...aiMessage, content: '' };
-    this.chatMessages.set([...baseMessages, workingMsg]);
-    if (this.typingTimer) clearInterval(this.typingTimer);
-
-    this.typingTimer = setInterval(() => {
-      index++;
-      const updated = { ...workingMsg, content: fullText.slice(0, index) };
-      this.chatMessages.update((list) => {
-        const next = [...list];
-        next[next.length - 1] = updated;
-        return next;
-      });
-      if (index >= fullText.length) {
-        clearInterval(this.typingTimer);
-        this.typingTimer = null;
-        this.isAiTyping.set(false);
-      }
-    }, 20);
-  }
-
-  private withLocalTimestamp(msg: ThreadMessage): ThreadMessage {
-    return { ...msg, localTimestamp: new Date().toISOString() };
-  }
-
-  // Voice & Hints Logic (Kept same as provided)
-  toggleMic(): void { this.initVoice(); if (!this.recognition) return; if (this.isListening()) this.stopVoice(); else { this.queryControl.setValue(''); this.isListening.set(true); this.recognition.start(); } }
-  private stopVoice() { if (this.recognition) this.recognition.stop(); this.isListening.set(false); clearTimeout(this.silenceTimer); }
-  private initVoice(): void { if (this.recognition) return; const Speech = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition; if (!Speech) return; this.recognition = new Speech(); this.recognition.lang = 'en-US'; this.recognition.interimResults = true; this.recognition.continuous = true; this.recognition.onresult = (e: any) => { clearTimeout(this.silenceTimer); this.silenceTimer = setTimeout(() => { this.stopVoice(); if (this.queryControl.value.length > 3) this.submitQuery(); }, 1000); let t = ''; for (let i = e.resultIndex; i < e.results.length; i++) t += e.results[i][0].transcript; this.queryControl.setValue(t.trim()); }; this.recognition.onerror = () => this.stopVoice(); this.recognition.onend = () => this.stopVoice(); }
-
-  private startHelperRotation() { if (this.helperIntervalId) clearInterval(this.helperIntervalId); this.helperIntervalId = setInterval(() => { if (this.queryControl.value) return; this.currentHelperIndex.update(i => (i + 1) % this.helperHints.length); }, 5000); }
-
-  ngOnDestroy(): void {
-    if (this.typingTimer) clearInterval(this.typingTimer);
-    if (this.helperIntervalId) clearInterval(this.helperIntervalId);
-    if (this.recognition) try { this.recognition.stop(); } catch { }
-    clearTimeout(this.silenceTimer);
+  trackMessage(index: number, msg: ThreadMessage): string {
+    return `${msg.type}-${index}-${msg.content?.slice(0, 20)}`;
   }
 }
-
---- ts
-import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable, of } from 'rxjs';
-import { delay, map, switchMap, shareReplay } from 'rxjs/operators';
-
-import { environment } from '../../../environments/environment';
-import {
-    AiThreadRequest,
-    AiThreadResponse,
-    ThreadMessage
-} from '../models/ai-thread.models';
-import {
-    ActionResult,
-    AnswerResult,
-    AiSearchResponse,
-} from '../models/ai-search.models';
-import { MockScenario } from '../models/mock-ai.models';
-import { AuthService } from './auth.service'; // ✅ IMPORT AUTH SERVICE
-
-const MOCK_DATA_URL = 'assets/mock-ai-responses.json';
-
-@Injectable({ providedIn: 'root' })
-export class AiSearchService {
-    // ---------------------------------------------------------------------------
-    // DEPENDENCIES & STATE
-    // ---------------------------------------------------------------------------
-    private readonly http = inject(HttpClient);
-    private readonly auth = inject(AuthService); // ✅ INJECT AUTH
-
-    // Cache for mock scenarios to avoid repeated HTTP calls
-    private mockScenarios$: Observable<MockScenario[]> | null = null;
-
-    // ---------------------------------------------------------------------------
-    // 1. CHAT HISTORY (BROWSER STORAGE)
-    // ---------------------------------------------------------------------------
-
-    /**
-     * Loads chat history for a specific thread from LocalStorage.
-     * Returns Observable to mimic an API call.
-     */
-    loadHistory(threadId: string): Observable<ThreadMessage[]> {
-        const userId = this.getCurrentUserId();
-        const key = `wf_chat_${userId}_${threadId}`;
-
-        // In the future, you can swap this line for a real API call:
-        // return this.http.get<ThreadMessage[]>(`${environment.apiBaseUrl}/chat/history/${threadId}`);
-
-        const raw = localStorage.getItem(key);
-        const history = raw ? JSON.parse(raw) : [];
-
-        return of(history).pipe(delay(200)); // Simulate network fetch
-    }
-
-    /**
-     * Saves the entire message list to LocalStorage.
-     */
-    saveHistory(threadId: string, messages: ThreadMessage[]): Observable<void> {
-        const userId = this.getCurrentUserId();
-        const key = `wf_chat_${userId}_${threadId}`;
-
-        localStorage.setItem(key, JSON.stringify(messages));
-        return of(void 0);
-    }
-
-    /**
-     * Clears history for a specific thread.
-     */
-    clearHistory(threadId: string): Observable<void> {
-        const userId = this.getCurrentUserId();
-        const key = `wf_chat_${userId}_${threadId}`;
-
-        localStorage.removeItem(key);
-        return of(void 0);
-    }
-
-    // ---------------------------------------------------------------------------
-    // 2. PUBLIC API (SEARCH)
-    // ---------------------------------------------------------------------------
-
-    /**
-     * Performs an AI search or chat interaction.
-     */
-    search(
-        query: string,
-        threadId: string,
-        metadata: Record<string, unknown> = { workflow: 'onboarding' },
-        actor_id?: string
-    ): Observable<AiSearchResponse> {
-
-        // ✅ Use injected ID if not provided explicitly
-        const realActorId = actor_id || this.getCurrentUserId();
-
-        const payload: AiThreadRequest = {
-            message: query,
-            thread_id: threadId,
-            metadata,
-            actor_id: realActorId,
-        };
-
-        // UX: Add artificial delay for "thinking" effect if needed
-        const minDelayMs = environment.mockConfig.enableChat ? 1500 : 0;
-        const started = Date.now();
-
-        // 1. Determine Source (Mock vs Real)
-        const rawResponse$ = environment.mockConfig.enableChat
-            ? this.getMockResponse(query, payload)
-            : this.http.post<AiThreadResponse>(`${environment.apiBaseUrl}/chat`, payload);
-
-        // 2. Process & Map Response
-        return rawResponse$.pipe(
-            map((raw) =>
-                this.mapToUi(query, raw, environment.mockConfig.enableChat ? 'mock' : 'python-api')
-            ),
-            switchMap((uiResponse) => {
-                // Enforce minimum delay for better UX
-                const elapsed = Date.now() - started;
-                const remainingDelay = Math.max(0, minDelayMs - elapsed);
-                return remainingDelay > 0 ? of(uiResponse).pipe(delay(remainingDelay)) : of(uiResponse);
-            })
-        );
-    }
-
-    isMockMode(): boolean {
-        return environment.mockConfig.enableChat;
-    }
-
-    // ---------------------------------------------------------------------------
-    // PRIVATE: HELPERS
-    // ---------------------------------------------------------------------------
-
-    private getCurrentUserId(): string {
-        return this.auth.currentUser()?.id || 'anonymous';
-    }
-
-    // ---------------------------------------------------------------------------
-    // PRIVATE: MOCK LOGIC
-    // ---------------------------------------------------------------------------
-
-    private getMockResponse(query: string, payload: AiThreadRequest): Observable<AiThreadResponse> {
-        return this.loadMocks().pipe(
-            map((scenarios) => {
-                const scenario = this.pickScenario(query, scenarios);
-                return this.buildThreadFromScenario(payload, scenario);
-            })
-        );
-    }
-
-    private loadMocks(): Observable<MockScenario[]> {
-        if (!this.mockScenarios$) {
-            this.mockScenarios$ = this.http.get<MockScenario[]>(MOCK_DATA_URL).pipe(
-                shareReplay(1)
-            );
-        }
-        return this.mockScenarios$;
-    }
-
-    private pickScenario(query: string, scenarios: MockScenario[]): MockScenario {
-        const q = query.toLowerCase();
-        const match = scenarios.find((s) =>
-            (s.keywords || []).some((k) => q.includes(k.toLowerCase()))
-        );
-        if (match) return match;
-        const fallback = scenarios.find((s) => s.id === 'generic-fallback');
-        return fallback || scenarios[0];
-    }
-
-    private buildThreadFromScenario(
-        req: AiThreadRequest,
-        scenario: MockScenario
-    ): AiThreadResponse {
-        const now = new Date().toISOString();
-        const base = scenario.thread;
-
-        const messages: ThreadMessage[] = [
-            {
-                type: 'human',
-                content: req.message,
-                tool_call: null,
-            },
-            ...base.messages.filter((m) => m.type !== 'human'),
-        ];
-
-        return {
-            reply: base.reply,
-            thread_id: req.thread_id || base.thread_id || scenario.id,
-            timestamp: base.timestamp || now,
-            messages: messages,
-        };
-    }
-
-    // ---------------------------------------------------------------------------
-    // PRIVATE: UI MAPPING (ADAPTER)
-    // ---------------------------------------------------------------------------
-
-    private mapToUi(
-        query: string,
-        raw: AiThreadResponse,
-        source: 'mock' | 'python-api'
-    ): AiSearchResponse {
-        const createdAt = raw.timestamp || new Date().toISOString();
-
-        return {
-            id: `${raw.thread_id}:${createdAt}`,
-            query,
-            createdAt,
-            answers: this.extractAnswers(raw),
-            actions: this.extractActions(raw),
-            meta: {
-                latencyMs: 0,
-                model: 'thread-api-model',
-                source,
-            },
-            threadId: raw.thread_id,
-            historyMessages: raw.messages,
-        };
-    }
-
-    private extractAnswers(raw: AiThreadResponse): AnswerResult[] {
-        const answers: AnswerResult[] = [];
-        const aiMessages = raw.messages.filter((m) => m.type === 'ai');
-
-        const looksHtml = (text: string | null | undefined): boolean =>
-            !!text && /<\s*(a|p|ul|ol|li|button|strong|em|div|span)\b/i.test(text);
-
-        if (raw.reply && raw.reply.trim().length > 0) {
-            answers.push({
-                id: 'ans-summary',
-                title: 'AI reply',
-                content: raw.reply,
-                type: 'summary',
-                isHtml: looksHtml(raw.reply),
-                confidence: 0.9,
-                tags: [],
-                references: [],
-            });
-        }
-
-        aiMessages.forEach((m, idx) => {
-            const content = m.content || '';
-            if (raw.reply && content.trim() === raw.reply.trim()) return;
-
-            answers.push({
-                id: `ans-msg-${idx}`,
-                title: 'AI reply',
-                content,
-                type: 'explanation',
-                isHtml: looksHtml(content),
-                confidence: 0.85,
-                tags: [],
-                references: [],
-            });
-        });
-
-        return answers;
-    }
-
-    private extractActions(raw: AiThreadResponse): ActionResult[] {
-        return raw.messages
-            .filter((m) => !!m.tool_call)
-            .map((m, idx) => {
-                const tc = m.tool_call || {};
-                const name = tc.name || tc.action || tc.type || 'Suggested action';
-                const description = tc.description || 'Action suggested by the AI.';
-                const lowerName = String(name).toLowerCase();
-                let category: ActionResult['category'] = 'other';
-
-                if (lowerName.includes('workday')) category = 'hr';
-                else if (lowerName.includes('equipment') || lowerName.includes('access')) category = 'access';
-                else if (lowerName.includes('email')) category = 'email';
-                else if (lowerName.includes('navigate') || lowerName.includes('open')) category = 'navigation';
-
-                return {
-                    id: `act-${idx}`,
-                    label: name,
-                    description,
-                    icon: 'bolt',
-                    category,
-                    primary: idx === 0,
-                    confidence: 0.9,
-                    payload: tc,
-                    requiresConfirmation: true,
-                    confirmLabel: 'Execute',
-                    url: tc.url,
-                    actionType: tc.url ? 'link' : 'workflow',
-                };
-            });
-    }
-}
-
-
-
