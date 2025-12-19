@@ -1,269 +1,44 @@
-🔹 DOCUMENT RULES (CRH)
-DOC_EFFE_DTTM
 INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, ConditionsJson, SortOrder)
+(
+    DepartmentCode,
+    TargetType,
+    TargetObjectType,
+    PropertyKey,
+    SourceType,
+    SourceValue,
+    ConditionsJson,
+    SortOrder
+)
 VALUES
 (
- 'CRH',
- 'DOCUMENT',
- 'DOC_EFFE_DTTM',
- 'FIELD',
- 'EffectiveDate',
- '[{"Field":"EffectiveDate","Operator":"IsNotNull"}]',
- 10
+    'CARCO BKGC',
+    'RELATIONSHIP',
+    'DEAL',
+    'ENTR_DEAL_ID',
+    'FIELD',
+    'CisiveCaseId',
+    '[{"Field":"CisiveCaseId","Operator":"IsNotNull"}]',
+    200
 );
-
-COUNTRY
 INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+(
+    DepartmentCode,
+    TargetType,
+    TargetObjectType,
+    PropertyKey,
+    SourceType,
+    SourceValue,
+    ConditionsJson,
+    SortOrder
+)
 VALUES
 (
- 'CRH',
- 'DOCUMENT',
- 'COUNTRY',
- 'FIELD',
- 'Country',
- 20
+    'CARCO BKGC',
+    'RELATIONSHIP',
+    'DEAL',
+    'SOR_CD',
+    'STATIC',
+    'CRC22',
+    '[{"Field":"Country","Operator":"Equals","Values":["USA"]}]',
+    210
 );
-
-REG_CNT_IND
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-(
- 'CRH',
- 'DOCUMENT',
- 'REG_CNT_IND',
- 'FIELD',
- 'Regulated',
- 30
-);
-
-🔹 EMPLOYEE RELATIONSHIP (CRH → EMP_ENTY)
-EMP_ID
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
- SourceType, SourceValue, ConditionsJson, SortOrder)
-VALUES
-(
- 'CRH',
- 'RELATIONSHIP',
- 'EMP_ENTY',
- 'EMP_ID',
- 'FIELD',
- 'EmployeeId',
- '[{"Field":"EmployeeId","Operator":"IsNotNull"}]',
- 100
-);
-
-EMP SOR_CD = VSTAR
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
- SourceType, SourceValue, SortOrder)
-VALUES
-(
- 'CRH',
- 'RELATIONSHIP',
- 'EMP_ENTY',
- 'SOR_CD',
- 'STATIC',
- 'VSTAR',
- 110
-);
-
-🧱 PART 3 — CRHI RULES (INTERNATIONAL / HISTORICAL)
-🔹 DOCUMENT RULES (CRHI)
-DOC_EFFE_DTTM
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, ConditionsJson, SortOrder)
-VALUES
-(
- 'CRHI',
- 'DOCUMENT',
- 'DOC_EFFE_DTTM',
- 'FIELD',
- 'EffectiveDate',
- '[{"Field":"EffectiveDate","Operator":"IsNotNull"}]',
- 10
-);
-
-COUNTRY
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-(
- 'CRHI',
- 'DOCUMENT',
- 'COUNTRY',
- 'FIELD',
- 'Country',
- 20
-);
-
-REG_CNT_IND
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-(
- 'CRHI',
- 'DOCUMENT',
- 'REG_CNT_IND',
- 'FIELD',
- 'Regulated',
- 30
-);
-
-🔹 EMPLOYEE RELATIONSHIP (CRHI → EMP_ENTY)
-EMP_ID
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
- SourceType, SourceValue, ConditionsJson, SortOrder)
-VALUES
-(
- 'CRHI',
- 'RELATIONSHIP',
- 'EMP_ENTY',
- 'EMP_ID',
- 'FIELD',
- 'EmployeeId',
- '[{"Field":"EmployeeId","Operator":"IsNotNull"}]',
- 100
-);
-
-EMP SOR_CD = VSTAR
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
- SourceType, SourceValue, SortOrder)
-VALUES
-(
- 'CRHI',
- 'RELATIONSHIP',
- 'EMP_ENTY',
- 'SOR_CD',
- 'STATIC',
- 'VSTAR',
- 110
-);
-
-🔹 DEAL RELATIONSHIP (CRHI → DEAL)
-ENTR_DEAL_ID
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
- SourceType, SourceValue, ConditionsJson, SortOrder)
-VALUES
-(
- 'CRHI',
- 'RELATIONSHIP',
- 'DEAL',
- 'ENTR_DEAL_ID',
- 'FIELD',
- 'CisiveCaseId',
- '[{"Field":"CisiveCaseId","Operator":"IsNotNull"}]',
- 200
-);
-
-DEAL SOR_CD = CRC22 (USA ONLY)
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
- SourceType, SourceValue, ConditionsJson, SortOrder)
-VALUES
-(
- 'CRHI',
- 'RELATIONSHIP',
- 'DEAL',
- 'SOR_CD',
- 'STATIC',
- 'CRC22',
- '[{"Field":"Country","Operator":"Equals","Values":["USA"]}]',
- 210
-);
-
-🧱 PART 4 — CARCO BKGC RULES
-🔹 DOCUMENT RULES (CARCO BKGC)
-DOC_EFFE_DTTM
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, ConditionsJson, SortOrder)
-VALUES
-(
- 'CARCO BKGC',
- 'DOCUMENT',
- 'DOC_EFFE_DTTM',
- 'FIELD',
- 'EffectiveDate',
- '[{"Field":"EffectiveDate","Operator":"IsNotNull"}]',
- 10
-);
-
-COUNTRY
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-(
- 'CARCO BKGC',
- 'DOCUMENT',
- 'COUNTRY',
- 'FIELD',
- 'Country',
- 20
-);
-
-REG_CNT_IND
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-(
- 'CARCO BKGC',
- 'DOCUMENT',
- 'REG_CNT_IND',
- 'FIELD',
- 'Regulated',
- 30
-);
-
-🔹 EMPLOYEE RELATIONSHIP (CARCO BKGC → EMP_ENTY)
-EMP_ID
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
- SourceType, SourceValue, ConditionsJson, SortOrder)
-VALUES
-(
- 'CARCO BKGC',
- 'RELATIONSHIP',
- 'EMP_ENTY',
- 'EMP_ID',
- 'FIELD',
- 'EmployeeId',
- '[{"Field":"EmployeeId","Operator":"IsNotNull"}]',
- 100
-);
-
-EMP SOR_CD = VSTAR
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
- SourceType, SourceValue, SortOrder)
-VALUES
-(
- 'CARCO BKGC',
- 'RELATIONSHIP',
- 'EMP_ENTY',
- 'SOR_CD',
- 'STATIC',
- 'VSTAR',
- 110
-);
-
-✅ FINAL VERIFICATION QUERIES
-SELECT DepartmentCode, TargetType, TargetObjectType, PropertyKey, SortOrder
-FROM [vstar].[dbo].[IcmpRules]
-WHERE DepartmentCode IN ('CRH', 'CRHI', 'CARCO BKGC')
-ORDER BY DepartmentCode, SortOrder;
-
-
-var documentRules =
-    _ruleRepository.GetDocumentRules(model.DepartmentCode);
-
-var relationshipRules =
-    _ruleRepository.GetRelationshipRules(model.DepartmentCode);
-
-var docRules = repo.GetDocumentRules("CRH");
-var relRules = repo.GetRelationshipRules("CRHI");
