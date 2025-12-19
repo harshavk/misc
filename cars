@@ -1,36 +1,7 @@
-CREATE TABLE ICMP_RULE
-(
-    RULE_ID INT IDENTITY(1,1) PRIMARY KEY,
-
-    DEPARTMENT_CODE VARCHAR(50) NOT NULL,
-
-    -- DOCUMENT | RELATIONSHIP
-    TARGET_TYPE VARCHAR(20) NOT NULL,
-
-    -- EMP_ENTY, DEAL (NULL for document rules)
-    TARGET_OBJECT_TYPE VARCHAR(50) NULL,
-
-    PROPERTY_KEY VARCHAR(100) NOT NULL,
-
-    -- FIELD | STATIC
-    SOURCE_TYPE VARCHAR(20) NOT NULL,
-
-    SOURCE_VALUE VARCHAR(200) NOT NULL,
-
-    -- JSON representation of List<RuleCondition>
-    CONDITIONS_JSON NVARCHAR(MAX) NULL,
-
-    SORT_ORDER INT NOT NULL,
-
-    IS_ACTIVE BIT NOT NULL DEFAULT 1,
-
-    CREATED_BY VARCHAR(50) NOT NULL DEFAULT 'SYSTEM',
-    CREATED_ON DATETIME NOT NULL DEFAULT GETUTCDATE()
-);
-
-
-INSERT INTO ICMP_RULE
-(DEPARTMENT_CODE, TARGET_TYPE, PROPERTY_KEY, SOURCE_TYPE, SOURCE_VALUE, CONDITIONS_JSON, SORT_ORDER)
+🔹 1️⃣ CRH — DOCUMENT RULES
+DOC_EFFE_DTTM
+INSERT INTO dbo.IcmpRules
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, ConditionsJson, SortOrder)
 VALUES
 (
  'CRH',
@@ -40,34 +11,39 @@ VALUES
  'EffectiveDate',
  '[{"Field":"EffectiveDate","Operator":"IsNotNull"}]',
  10
-),
-(
- 'CRHI',
- 'DOCUMENT',
- 'DOC_EFFE_DTTM',
- 'FIELD',
- 'EffectiveDate',
- '[{"Field":"EffectiveDate","Operator":"IsNotNull"}]',
- 10
 );
 
-INSERT INTO ICMP_RULE
-(DEPARTMENT_CODE, TARGET_TYPE, PROPERTY_KEY, SOURCE_TYPE, SOURCE_VALUE, SORT_ORDER)
+COUNTRY
+INSERT INTO dbo.IcmpRules
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
 VALUES
-('CRH',  'DOCUMENT', 'COUNTRY', 'FIELD', 'Country', 20),
-('CRHI', 'DOCUMENT', 'COUNTRY', 'FIELD', 'Country', 20);
+(
+ 'CRH',
+ 'DOCUMENT',
+ 'COUNTRY',
+ 'FIELD',
+ 'Country',
+ 20
+);
 
-
-INSERT INTO ICMP_RULE
-(DEPARTMENT_CODE, TARGET_TYPE, PROPERTY_KEY, SOURCE_TYPE, SOURCE_VALUE, SORT_ORDER)
+REG_CNT_IND
+INSERT INTO dbo.IcmpRules
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
 VALUES
-('CRH',  'DOCUMENT', 'REG_CNT_IND', 'FIELD', 'Regulated', 30),
-('CRHI', 'DOCUMENT', 'REG_CNT_IND', 'FIELD', 'Regulated', 30);
+(
+ 'CRH',
+ 'DOCUMENT',
+ 'REG_CNT_IND',
+ 'FIELD',
+ 'Regulated',
+ 30
+);
 
-
-INSERT INTO ICMP_RULE
-(DEPARTMENT_CODE, TARGET_TYPE, TARGET_OBJECT_TYPE, PROPERTY_KEY,
- SOURCE_TYPE, SOURCE_VALUE, CONDITIONS_JSON, SORT_ORDER)
+🔹 2️⃣ CRH — EMPLOYEE RELATIONSHIP (EMP_ENTY)
+EMP_ID
+INSERT INTO dbo.IcmpRules
+(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
+ SourceType, SourceValue, ConditionsJson, SortOrder)
 VALUES
 (
  'CRH',
@@ -78,28 +54,56 @@ VALUES
  'EmployeeId',
  '[{"Field":"EmployeeId","Operator":"IsNotNull"}]',
  100
-),
-(
- 'CRHI',
- 'RELATIONSHIP',
- 'EMP_ENTY',
- 'EMP_ID',
- 'FIELD',
- 'EmployeeId',
- '[{"Field":"EmployeeId","Operator":"IsNotNull"}]',
- 100
 );
 
-INSERT INTO ICMP_RULE
-(DEPARTMENT_CODE, TARGET_TYPE, TARGET_OBJECT_TYPE, PROPERTY_KEY,
- SOURCE_TYPE, SOURCE_VALUE, SORT_ORDER)
+EMP SOR_CD = VSTAR
+INSERT INTO dbo.IcmpRules
+(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
+ SourceType, SourceValue, SortOrder)
 VALUES
-('CRH',  'RELATIONSHIP', 'EMP_ENTY', 'SOR_CD', 'STATIC', 'VSTAR', 110),
-('CRHI', 'RELATIONSHIP', 'EMP_ENTY', 'SOR_CD', 'STATIC', 'VSTAR', 110);
+(
+ 'CRH',
+ 'RELATIONSHIP',
+ 'EMP_ENTY',
+ 'SOR_CD',
+ 'STATIC',
+ 'VSTAR',
+ 110
+);
 
-INSERT INTO ICMP_RULE
-(DEPARTMENT_CODE, TARGET_TYPE, TARGET_OBJECT_TYPE, PROPERTY_KEY,
- SOURCE_TYPE, SOURCE_VALUE, CONDITIONS_JSON, SORT_ORDER)
+🔹 3️⃣ CRHI — DOCUMENT RULES
+DOC_EFFE_DTTM
+INSERT INTO dbo.IcmpRules
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, ConditionsJson, SortOrder)
+VALUES
+(
+ 'CRHI',
+ 'DOCUMENT',
+ 'DOC_EFFE_DTTM',
+ 'FIELD',
+ 'EffectiveDate',
+ '[{"Field":"EffectiveDate","Operator":"IsNotNull"}]',
+ 10
+);
+
+COUNTRY
+INSERT INTO dbo.IcmpRules
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+(
+ 'CRHI',
+ 'DOCUMENT',
+ 'COUNTRY',
+ 'FIELD',
+ 'Country',
+ 20
+);
+
+🔹 4️⃣ CRHI — DEAL RELATIONSHIP
+ENTR_DEAL_ID
+INSERT INTO dbo.IcmpRules
+(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
+ SourceType, SourceValue, ConditionsJson, SortOrder)
 VALUES
 (
  'CRHI',
@@ -112,10 +116,10 @@ VALUES
  200
 );
 
-
-INSERT INTO ICMP_RULE
-(DEPARTMENT_CODE, TARGET_TYPE, TARGET_OBJECT_TYPE, PROPERTY_KEY,
- SOURCE_TYPE, SOURCE_VALUE, CONDITIONS_JSON, SORT_ORDER)
+DEAL SOR_CD = CRC22 (USA only)
+INSERT INTO dbo.IcmpRules
+(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
+ SourceType, SourceValue, ConditionsJson, SortOrder)
 VALUES
 (
  'CRHI',
@@ -127,4 +131,3 @@ VALUES
  '[{"Field":"Country","Operator":"Equals","Values":["USA"]}]',
  210
 );
- 
