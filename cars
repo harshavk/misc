@@ -1,145 +1,47 @@
-Common
- └── Rules
-     ├── RelationshipRule.cs
-     ├── RelationshipRuleEngine.cs
-
-using System.Collections.Generic;
-
-namespace Common.Rules
+public class ImageIngestionService
 {
-    /// <summary>
-    /// Rule that produces a property for a relationship object
-    /// (EMP_ENTY, DEAL, etc.)
-    /// </summary>
-    public class RelationshipRule
+    private readonly IIcmpRuleRepository _ruleRepository;
+    private readonly PropertyRuleEngine _propertyRuleEngine;
+    private readonly RelationshipRuleEngine _relationshipRuleEngine;
+
+    public ImageIngestionService(
+        IIcmpRuleRepository ruleRepository,
+        PropertyRuleEngine propertyRuleEngine,
+        RelationshipRuleEngine relationshipRuleEngine)
     {
-        public string RuleName { get; set; } = string.Empty;
+        _ruleRepository = ruleRepository;
+        _propertyRuleEngine = propertyRuleEngine;
+        _relationshipRuleEngine = relationshipRuleEngine;
+    }
 
-        /// <summary>
-        /// Relationship object type (EMP_ENTY, DEAL, etc.)
-        /// </summary>
-        public string ObjectType { get; set; } = string.Empty;
+    public ImageFile BuildImageFile(ImageManagementModel model)
+    {
+        // STEP 1: Build context
+        var context = ImageRuleContextFactory.Create(model);
 
-        public List<RuleCondition> Conditions { get; set; } = new();
+        // STEP 2: Load rules (DB / cache)
+        var documentRules =
+            _ruleRepository.GetDocumentRules(model.DepartmentCode);
 
-        public PropertyAction Action { get; set; }
+        var relationshipRules =
+            _ruleRepository.GetRelationshipRules(model.DepartmentCode);
 
-        public string PropertyKey { get; set; } = string.Empty;
+        // STEP 3: Execute engines
+        var documentProperties =
+            _propertyRuleEngine.Execute(documentRules, context);
 
-        /// <summary>
-        /// FIELD name or Static:value
-        /// </summary>
-        public string? ValueExpression { get; set; }
+        var relationshipProperties =
+            _relationshipRuleEngine.Execute(relationshipRules, context);
 
-        public int Order { get; set; }
+        // STEP 4: Final assembly
+        return new ImageFile
+        {
+            EmployeeId = model.EmployeeId,
+            Barcode = model.Barcode,
+            DepartmentCode = model.DepartmentCode,
+            Properties = documentProperties.ToArray(),
+            Relationships =
+                RelationshipBuilder.Build(relationshipProperties).ToArray()
+        };
     }
 }
-
-
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using Common.Context;
-using Common.Models;
-
-namespace Common.Rules
-{
-    public class RelationshipRuleEngine
-    {
-        public Dictionary<string, List<Property>> Execute(
-            IEnumerable<RelationshipRule> rules,
-            ImageRuleContext context)
-        {
-            // Key = ObjectType (EMP_ENTY, DEAL)
-            var result = new Dictionary<string, Dictionary<string, Property>>(
-                StringComparer.OrdinalIgnoreCase);
-
-            foreach (var rule in rules.OrderBy(r => r.Order))
-            {
-                if (!ConditionEvaluator.EvaluateAll(rule.Conditions, context))
-                    continue;
-
-                if (!result.ContainsKey(rule.ObjectType))
-                    result[rule.ObjectType] =
-                        new Dictionary<string, Property>(StringComparer.OrdinalIgnoreCase);
-
-                var props = result[rule.ObjectType];
-
-                switch (rule.Action)
-                {
-                    case PropertyAction.Add:
-                    case PropertyAction.Update:
-                        var value = ResolveValue(rule.ValueExpression, context);
-                        if (value == null) continue;
-
-                        props[rule.PropertyKey] = new Property
-                        {
-                            key = rule.PropertyKey,
-                            value = value
-                        };
-                        break;
-
-                    case PropertyAction.Remove:
-                        props.Remove(rule.PropertyKey);
-                        break;
-                }
-            }
-
-            // Convert to expected output
-            return result.ToDictionary(
-                k => k.Key,
-                v => v.Value.Values.ToList(),
-                StringComparer.OrdinalIgnoreCase);
-        }
-
-        private static string? ResolveValue(
-            string? expression,
-            ImageRuleContext context)
-        {
-            if (string.IsNullOrWhiteSpace(expression))
-                return null;
-
-            if (expression.StartsWith("Static:", StringComparison.OrdinalIgnoreCase))
-                return expression.Substring(7);
-
-            return context.GetValue(expression)?.ToString();
-        }
-    }
-}
-
-
-
-using System.Collections.Generic;
-using System.Linq;
-using Common.Models;
-
-namespace Common.Builders
-{
-    public static class RelationshipBuilder
-    {
-        public static List<Relationship> Build(
-            Dictionary<string, List<Property>> relationshipProperties)
-        {
-            return relationshipProperties.Select(r => new Relationship
-            {
-                objectType = r.Key,
-                properties = r.Value.ToArray()
-            }).ToList();
-        }
-    }
-}
-
-
-var context = ImageRuleContextFactory.Create(model);
-
-var documentProps =
-    propertyRuleEngine.Execute(documentRules, context);
-
-var relationshipProps =
-    relationshipRuleEngine.Execute(relationshipRules, context);
-
-var imageFile = new ImageFile
-{
-    Properties = documentProps.ToArray(),
-    Relationships = RelationshipBuilder.Build(relationshipProps)
-};
