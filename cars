@@ -1,44 +1,125 @@
+DELETE FROM [vstar].[dbo].[IcmpRules]
+WHERE DepartmentCode = 'CARCO BKGC'
+  AND TargetType = 'DOCUMENT';
+
 INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+('CARCO BKGC', 'DOCUMENT', 'DOC_FILE_NM', 'FIELD', 'FileName', 40);
+
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+('CARCO BKGC', 'DOCUMENT', 'SRC_CMNT_DTTM', 'FIELD', 'ReceivedDate', 50);
+
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+('CARCO BKGC', 'DOCUMENT', 'DOC_DATE', 'FIELD', 'EffectiveDate', 60);
+
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+('CARCO BKGC', 'DOCUMENT', 'YEAR', 'FIELD', 'Year', 70);
+
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+('CARCO BKGC', 'DOCUMENT', 'DOC_CAT_CD', 'FIELD', 'Category', 80);
+
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+('CARCO BKGC', 'DOCUMENT', 'DOC_TYPE_CD', 'FIELD', 'Type', 90);
+
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+('CARCO BKGC', 'DOCUMENT', 'LGCY_DOC_TYPE_CD', 'FIELD', 'SubType', 100);
+
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+('CARCO BKGC', 'DOCUMENT', 'RecordClassCode', 'FIELD', 'RecordClass', 110);
+
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+('CARCO BKGC', 'DOCUMENT', 'ORGN_DOC_DESC', 'FIELD', 'BarcodeDesc', 120);
+
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+('CARCO BKGC', 'DOCUMENT', 'EXTRL_DOC_REF_ID', 'FIELD', 'Barcode', 130);
+
+NSERT INTO [vstar].[dbo].[IcmpRules]
 (
-    DepartmentCode,
-    TargetType,
-    TargetObjectType,
-    PropertyKey,
-    SourceType,
-    SourceValue,
-    ConditionsJson,
-    SortOrder
+ DepartmentCode, TargetType, PropertyKey,
+ SourceType, SourceValue,
+ ConditionsJson, SortOrder
 )
 VALUES
 (
-    'CARCO BKGC',
-    'RELATIONSHIP',
-    'DEAL',
-    'ENTR_DEAL_ID',
-    'FIELD',
-    'CisiveCaseId',
-    '[{"Field":"CisiveCaseId","Operator":"IsNotNull"}]',
-    200
+ 'CARCO BKGC',
+ 'DOCUMENT',
+ 'OPF',
+ 'FIELD',
+ 'OpfIndicator',
+ '[{"Field":"OpfIndicator","Operator":"IsNotNull"}]',
+ 140
 );
+
 INSERT INTO [vstar].[dbo].[IcmpRules]
-(
-    DepartmentCode,
-    TargetType,
-    TargetObjectType,
-    PropertyKey,
-    SourceType,
-    SourceValue,
-    ConditionsJson,
-    SortOrder
-)
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
 VALUES
-(
-    'CARCO BKGC',
-    'RELATIONSHIP',
-    'DEAL',
-    'SOR_CD',
-    'STATIC',
-    'CRC22',
-    '[{"Field":"Country","Operator":"Equals","Values":["USA"]}]',
-    210
-);
+('CARCO BKGC', 'DOCUMENT', 'APPLICATION_SOURCE', 'FIELD', 'ApplicationSource', 150);
+
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+('CARCO BKGC', 'DOCUMENT', 'INSTANCE_NAME', 'FIELD', 'InstanceName', 160);
+
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+('CARCO BKGC', 'DOCUMENT', 'REPOSITORY', 'FIELD', 'Repository', 170);
+
+SELECT PropertyKey, SortOrder
+FROM [vstar].[dbo].[IcmpRules]
+WHERE DepartmentCode = 'CARCO BKGC'
+  AND TargetType = 'DOCUMENT'
+ORDER BY SortOrder;
+
+["Year"] = model.EffectiveDateTime?.Year.ToString()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
