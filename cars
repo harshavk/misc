@@ -1,45 +1,40 @@
 Common
  └── Rules
-     ├── PropertyRule.cs
-     ├── PropertyAction.cs
-     ├── PropertyRuleEngine.cs
-
-namespace Common.Rules
-{
-    public enum PropertyAction
-    {
-        Add,
-        Update,
-        Remove
-    }
-}
+     ├── RelationshipRule.cs
+     ├── RelationshipRuleEngine.cs
 
 using System.Collections.Generic;
 
 namespace Common.Rules
 {
-    public class PropertyRule
+    /// <summary>
+    /// Rule that produces a property for a relationship object
+    /// (EMP_ENTY, DEAL, etc.)
+    /// </summary>
+    public class RelationshipRule
     {
-        // Rule identity (DB / UI)
         public string RuleName { get; set; } = string.Empty;
 
-        // Conditions
+        /// <summary>
+        /// Relationship object type (EMP_ENTY, DEAL, etc.)
+        /// </summary>
+        public string ObjectType { get; set; } = string.Empty;
+
         public List<RuleCondition> Conditions { get; set; } = new();
 
-        // Action
         public PropertyAction Action { get; set; }
 
-        // Target
         public string PropertyKey { get; set; } = string.Empty;
 
-        // Value source
-        // Example: "EmployeeId", "Barcode", "Static:USA"
+        /// <summary>
+        /// FIELD name or Static:value
+        /// </summary>
         public string? ValueExpression { get; set; }
 
-        // Ordering
         public int Order { get; set; }
     }
 }
+
 
 using System;
 using System.Collections.Generic;
@@ -49,19 +44,26 @@ using Common.Models;
 
 namespace Common.Rules
 {
-    public class PropertyRuleEngine
+    public class RelationshipRuleEngine
     {
-        public List<Property> Execute(
-            IEnumerable<PropertyRule> rules,
+        public Dictionary<string, List<Property>> Execute(
+            IEnumerable<RelationshipRule> rules,
             ImageRuleContext context)
         {
-            var properties = new Dictionary<string, Property>(
+            // Key = ObjectType (EMP_ENTY, DEAL)
+            var result = new Dictionary<string, Dictionary<string, Property>>(
                 StringComparer.OrdinalIgnoreCase);
 
             foreach (var rule in rules.OrderBy(r => r.Order))
             {
                 if (!ConditionEvaluator.EvaluateAll(rule.Conditions, context))
                     continue;
+
+                if (!result.ContainsKey(rule.ObjectType))
+                    result[rule.ObjectType] =
+                        new Dictionary<string, Property>(StringComparer.OrdinalIgnoreCase);
+
+                var props = result[rule.ObjectType];
 
                 switch (rule.Action)
                 {
@@ -70,7 +72,7 @@ namespace Common.Rules
                         var value = ResolveValue(rule.ValueExpression, context);
                         if (value == null) continue;
 
-                        properties[rule.PropertyKey] = new Property
+                        props[rule.PropertyKey] = new Property
                         {
                             key = rule.PropertyKey,
                             value = value
@@ -78,12 +80,16 @@ namespace Common.Rules
                         break;
 
                     case PropertyAction.Remove:
-                        properties.Remove(rule.PropertyKey);
+                        props.Remove(rule.PropertyKey);
                         break;
                 }
             }
 
-            return properties.Values.ToList();
+            // Convert to expected output
+            return result.ToDictionary(
+                k => k.Key,
+                v => v.Value.Values.ToList(),
+                StringComparer.OrdinalIgnoreCase);
         }
 
         private static string? ResolveValue(
@@ -93,15 +99,47 @@ namespace Common.Rules
             if (string.IsNullOrWhiteSpace(expression))
                 return null;
 
-            // Static value
             if (expression.StartsWith("Static:", StringComparison.OrdinalIgnoreCase))
                 return expression.Substring(7);
 
-            // Context value
-            var value = context.GetValue(expression);
-            return value?.ToString();
+            return context.GetValue(expression)?.ToString();
         }
     }
 }
 
 
+
+using System.Collections.Generic;
+using System.Linq;
+using Common.Models;
+
+namespace Common.Builders
+{
+    public static class RelationshipBuilder
+    {
+        public static List<Relationship> Build(
+            Dictionary<string, List<Property>> relationshipProperties)
+        {
+            return relationshipProperties.Select(r => new Relationship
+            {
+                objectType = r.Key,
+                properties = r.Value.ToArray()
+            }).ToList();
+        }
+    }
+}
+
+
+var context = ImageRuleContextFactory.Create(model);
+
+var documentProps =
+    propertyRuleEngine.Execute(documentRules, context);
+
+var relationshipProps =
+    relationshipRuleEngine.Execute(relationshipRules, context);
+
+var imageFile = new ImageFile
+{
+    Properties = documentProps.ToArray(),
+    Relationships = RelationshipBuilder.Build(relationshipProps)
+};
