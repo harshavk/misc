@@ -1,133 +1,125 @@
-🔹 1️⃣ CRH — DOCUMENT RULES
-DOC_EFFE_DTTM
-INSERT INTO dbo.IcmpRules
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, ConditionsJson, SortOrder)
-VALUES
-(
- 'CRH',
- 'DOCUMENT',
- 'DOC_EFFE_DTTM',
- 'FIELD',
- 'EffectiveDate',
- '[{"Field":"EffectiveDate","Operator":"IsNotNull"}]',
- 10
-);
+Common
+ └── DataAccess
+     └── Repositories
+         ├── IIcmpRuleRepository.cs
+         └── IcmpRuleRepository.cs
+using System.Collections.Generic;
+using Common.Rules;
 
-COUNTRY
-INSERT INTO dbo.IcmpRules
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-(
- 'CRH',
- 'DOCUMENT',
- 'COUNTRY',
- 'FIELD',
- 'Country',
- 20
-);
+namespace Common.DataAccess.Repositories
+{
+    public interface IIcmpRuleRepository
+    {
+        IReadOnlyList<PropertyRule> GetDocumentRules(string departmentCode);
 
-REG_CNT_IND
-INSERT INTO dbo.IcmpRules
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-(
- 'CRH',
- 'DOCUMENT',
- 'REG_CNT_IND',
- 'FIELD',
- 'Regulated',
- 30
-);
+        IReadOnlyList<RelationshipRule> GetRelationshipRules(string departmentCode);
+    }
+}
 
-🔹 2️⃣ CRH — EMPLOYEE RELATIONSHIP (EMP_ENTY)
-EMP_ID
-INSERT INTO dbo.IcmpRules
-(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
- SourceType, SourceValue, ConditionsJson, SortOrder)
-VALUES
-(
- 'CRH',
- 'RELATIONSHIP',
- 'EMP_ENTY',
- 'EMP_ID',
- 'FIELD',
- 'EmployeeId',
- '[{"Field":"EmployeeId","Operator":"IsNotNull"}]',
- 100
-);
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using Common.EntityFramework;
+using Common.EntityFramework.Entities;
+using Common.Rules;
 
-EMP SOR_CD = VSTAR
-INSERT INTO dbo.IcmpRules
-(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
- SourceType, SourceValue, SortOrder)
-VALUES
-(
- 'CRH',
- 'RELATIONSHIP',
- 'EMP_ENTY',
- 'SOR_CD',
- 'STATIC',
- 'VSTAR',
- 110
-);
+namespace Common.DataAccess.Repositories
+{
+    public class IcmpRuleRepository : IIcmpRuleRepository
+    {
+        private readonly AppDbContext _db;
 
-🔹 3️⃣ CRHI — DOCUMENT RULES
-DOC_EFFE_DTTM
-INSERT INTO dbo.IcmpRules
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, ConditionsJson, SortOrder)
-VALUES
-(
- 'CRHI',
- 'DOCUMENT',
- 'DOC_EFFE_DTTM',
- 'FIELD',
- 'EffectiveDate',
- '[{"Field":"EffectiveDate","Operator":"IsNotNull"}]',
- 10
-);
+        public IcmpRuleRepository(AppDbContext db)
+        {
+            _db = db;
+        }
 
-COUNTRY
-INSERT INTO dbo.IcmpRules
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-(
- 'CRHI',
- 'DOCUMENT',
- 'COUNTRY',
- 'FIELD',
- 'Country',
- 20
-);
+        public IReadOnlyList<PropertyRule> GetDocumentRules(string departmentCode)
+        {
+            var entities = _db.IcmpRules
+                .Where(r =>
+                    r.DepartmentCode == departmentCode &&
+                    r.IsActive &&
+                    r.TargetType == "DOCUMENT")
+                .OrderBy(r => r.SortOrder)
+                .ToList();
 
-🔹 4️⃣ CRHI — DEAL RELATIONSHIP
-ENTR_DEAL_ID
-INSERT INTO dbo.IcmpRules
-(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
- SourceType, SourceValue, ConditionsJson, SortOrder)
-VALUES
-(
- 'CRHI',
- 'RELATIONSHIP',
- 'DEAL',
- 'ENTR_DEAL_ID',
- 'FIELD',
- 'CisiveCaseId',
- '[{"Field":"CisiveCaseId","Operator":"IsNotNull"}]',
- 200
-);
+            return entities.Select(MapToPropertyRule).ToList();
+        }
 
-DEAL SOR_CD = CRC22 (USA only)
-INSERT INTO dbo.IcmpRules
-(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
- SourceType, SourceValue, ConditionsJson, SortOrder)
-VALUES
-(
- 'CRHI',
- 'RELATIONSHIP',
- 'DEAL',
- 'SOR_CD',
- 'STATIC',
- 'CRC22',
- '[{"Field":"Country","Operator":"Equals","Values":["USA"]}]',
- 210
-);
+        public IReadOnlyList<RelationshipRule> GetRelationshipRules(string departmentCode)
+        {
+            var entities = _db.IcmpRules
+                .Where(r =>
+                    r.DepartmentCode == departmentCode &&
+                    r.IsActive &&
+                    r.TargetType == "RELATIONSHIP")
+                .OrderBy(r => r.SortOrder)
+                .ToList();
+
+            return entities.Select(MapToRelationshipRule).ToList();
+        }
+
+        // -------------------------------
+        // Mapping helpers
+        // -------------------------------
+
+        private static PropertyRule MapToPropertyRule(IcmpRuleEntity entity)
+        {
+            return new PropertyRule
+            {
+                RuleName = $"DOC_{entity.PropertyKey}",
+                PropertyKey = entity.PropertyKey,
+                Action = PropertyAction.Add,
+                ValueExpression = BuildValueExpression(entity),
+                Conditions = DeserializeConditions(entity.ConditionsJson),
+                Order = entity.SortOrder
+            };
+        }
+
+        private static RelationshipRule MapToRelationshipRule(IcmpRuleEntity entity)
+        {
+            return new RelationshipRule
+            {
+                RuleName = $"{entity.TargetObjectType}_{entity.PropertyKey}",
+                ObjectType = entity.TargetObjectType!,
+                PropertyKey = entity.PropertyKey,
+                Action = PropertyAction.Add,
+                ValueExpression = BuildValueExpression(entity),
+                Conditions = DeserializeConditions(entity.ConditionsJson),
+                Order = entity.SortOrder
+            };
+        }
+
+        private static string BuildValueExpression(IcmpRuleEntity entity)
+        {
+            return entity.SourceType.ToUpper() switch
+            {
+                "STATIC" => $"Static:{entity.SourceValue}",
+                _ => entity.SourceValue
+            };
+        }
+
+        private static List<RuleCondition> DeserializeConditions(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return new List<RuleCondition>();
+
+            return JsonSerializer.Deserialize<List<RuleCondition>>(json)
+                   ?? new List<RuleCondition>();
+        }
+    }
+}
+
+
+services.AddScoped<IIcmpRuleRepository, IcmpRuleRepository>();
+
+
+var documentRules =
+    _ruleRepository.GetDocumentRules(model.DepartmentCode);
+
+var relationshipRules =
+    _ruleRepository.GetRelationshipRules(model.DepartmentCode);
+
+var docRules = repo.GetDocumentRules("CRH");
+var relRules = repo.GetRelationshipRules("CRHI");
