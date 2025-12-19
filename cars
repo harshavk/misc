@@ -1,0 +1,107 @@
+Common
+ └── Rules
+     ├── PropertyRule.cs
+     ├── PropertyAction.cs
+     ├── PropertyRuleEngine.cs
+
+namespace Common.Rules
+{
+    public enum PropertyAction
+    {
+        Add,
+        Update,
+        Remove
+    }
+}
+
+using System.Collections.Generic;
+
+namespace Common.Rules
+{
+    public class PropertyRule
+    {
+        // Rule identity (DB / UI)
+        public string RuleName { get; set; } = string.Empty;
+
+        // Conditions
+        public List<RuleCondition> Conditions { get; set; } = new();
+
+        // Action
+        public PropertyAction Action { get; set; }
+
+        // Target
+        public string PropertyKey { get; set; } = string.Empty;
+
+        // Value source
+        // Example: "EmployeeId", "Barcode", "Static:USA"
+        public string? ValueExpression { get; set; }
+
+        // Ordering
+        public int Order { get; set; }
+    }
+}
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Common.Context;
+using Common.Models;
+
+namespace Common.Rules
+{
+    public class PropertyRuleEngine
+    {
+        public List<Property> Execute(
+            IEnumerable<PropertyRule> rules,
+            ImageRuleContext context)
+        {
+            var properties = new Dictionary<string, Property>(
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var rule in rules.OrderBy(r => r.Order))
+            {
+                if (!ConditionEvaluator.EvaluateAll(rule.Conditions, context))
+                    continue;
+
+                switch (rule.Action)
+                {
+                    case PropertyAction.Add:
+                    case PropertyAction.Update:
+                        var value = ResolveValue(rule.ValueExpression, context);
+                        if (value == null) continue;
+
+                        properties[rule.PropertyKey] = new Property
+                        {
+                            key = rule.PropertyKey,
+                            value = value
+                        };
+                        break;
+
+                    case PropertyAction.Remove:
+                        properties.Remove(rule.PropertyKey);
+                        break;
+                }
+            }
+
+            return properties.Values.ToList();
+        }
+
+        private static string? ResolveValue(
+            string? expression,
+            ImageRuleContext context)
+        {
+            if (string.IsNullOrWhiteSpace(expression))
+                return null;
+
+            // Static value
+            if (expression.StartsWith("Static:", StringComparison.OrdinalIgnoreCase))
+                return expression.Substring(7);
+
+            // Context value
+            var value = context.GetValue(expression);
+            return value?.ToString();
+        }
+    }
+}
+
+
