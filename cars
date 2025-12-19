@@ -1,118 +1,262 @@
-Common
- └── DataAccess
-     └── Repositories
-         ├── IIcmpRuleRepository.cs
-         └── IcmpRuleRepository.cs
-using System.Collections.Generic;
-using Common.Rules;
+🔹 DOCUMENT RULES (CRH)
+DOC_EFFE_DTTM
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, ConditionsJson, SortOrder)
+VALUES
+(
+ 'CRH',
+ 'DOCUMENT',
+ 'DOC_EFFE_DTTM',
+ 'FIELD',
+ 'EffectiveDate',
+ '[{"Field":"EffectiveDate","Operator":"IsNotNull"}]',
+ 10
+);
 
-namespace Common.DataAccess.Repositories
-{
-    public interface IIcmpRuleRepository
-    {
-        IReadOnlyList<PropertyRule> GetDocumentRules(string departmentCode);
+COUNTRY
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+(
+ 'CRH',
+ 'DOCUMENT',
+ 'COUNTRY',
+ 'FIELD',
+ 'Country',
+ 20
+);
 
-        IReadOnlyList<RelationshipRule> GetRelationshipRules(string departmentCode);
-    }
-}
+REG_CNT_IND
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+(
+ 'CRH',
+ 'DOCUMENT',
+ 'REG_CNT_IND',
+ 'FIELD',
+ 'Regulated',
+ 30
+);
 
-using System.Collections.Generic;
-using System.Linq;
-using System.Text.Json;
-using Common.EntityFramework;
-using Common.EntityFramework.Entities;
-using Common.Rules;
+🔹 EMPLOYEE RELATIONSHIP (CRH → EMP_ENTY)
+EMP_ID
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
+ SourceType, SourceValue, ConditionsJson, SortOrder)
+VALUES
+(
+ 'CRH',
+ 'RELATIONSHIP',
+ 'EMP_ENTY',
+ 'EMP_ID',
+ 'FIELD',
+ 'EmployeeId',
+ '[{"Field":"EmployeeId","Operator":"IsNotNull"}]',
+ 100
+);
 
-namespace Common.DataAccess.Repositories
-{
-    public class IcmpRuleRepository : IIcmpRuleRepository
-    {
-        private readonly AppDbContext _db;
+EMP SOR_CD = VSTAR
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
+ SourceType, SourceValue, SortOrder)
+VALUES
+(
+ 'CRH',
+ 'RELATIONSHIP',
+ 'EMP_ENTY',
+ 'SOR_CD',
+ 'STATIC',
+ 'VSTAR',
+ 110
+);
 
-        public IcmpRuleRepository(AppDbContext db)
-        {
-            _db = db;
-        }
+🧱 PART 3 — CRHI RULES (INTERNATIONAL / HISTORICAL)
+🔹 DOCUMENT RULES (CRHI)
+DOC_EFFE_DTTM
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, ConditionsJson, SortOrder)
+VALUES
+(
+ 'CRHI',
+ 'DOCUMENT',
+ 'DOC_EFFE_DTTM',
+ 'FIELD',
+ 'EffectiveDate',
+ '[{"Field":"EffectiveDate","Operator":"IsNotNull"}]',
+ 10
+);
 
-        public IReadOnlyList<PropertyRule> GetDocumentRules(string departmentCode)
-        {
-            var entities = _db.IcmpRules
-                .Where(r =>
-                    r.DepartmentCode == departmentCode &&
-                    r.IsActive &&
-                    r.TargetType == "DOCUMENT")
-                .OrderBy(r => r.SortOrder)
-                .ToList();
+COUNTRY
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+(
+ 'CRHI',
+ 'DOCUMENT',
+ 'COUNTRY',
+ 'FIELD',
+ 'Country',
+ 20
+);
 
-            return entities.Select(MapToPropertyRule).ToList();
-        }
+REG_CNT_IND
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+(
+ 'CRHI',
+ 'DOCUMENT',
+ 'REG_CNT_IND',
+ 'FIELD',
+ 'Regulated',
+ 30
+);
 
-        public IReadOnlyList<RelationshipRule> GetRelationshipRules(string departmentCode)
-        {
-            var entities = _db.IcmpRules
-                .Where(r =>
-                    r.DepartmentCode == departmentCode &&
-                    r.IsActive &&
-                    r.TargetType == "RELATIONSHIP")
-                .OrderBy(r => r.SortOrder)
-                .ToList();
+🔹 EMPLOYEE RELATIONSHIP (CRHI → EMP_ENTY)
+EMP_ID
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
+ SourceType, SourceValue, ConditionsJson, SortOrder)
+VALUES
+(
+ 'CRHI',
+ 'RELATIONSHIP',
+ 'EMP_ENTY',
+ 'EMP_ID',
+ 'FIELD',
+ 'EmployeeId',
+ '[{"Field":"EmployeeId","Operator":"IsNotNull"}]',
+ 100
+);
 
-            return entities.Select(MapToRelationshipRule).ToList();
-        }
+EMP SOR_CD = VSTAR
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
+ SourceType, SourceValue, SortOrder)
+VALUES
+(
+ 'CRHI',
+ 'RELATIONSHIP',
+ 'EMP_ENTY',
+ 'SOR_CD',
+ 'STATIC',
+ 'VSTAR',
+ 110
+);
 
-        // -------------------------------
-        // Mapping helpers
-        // -------------------------------
+🔹 DEAL RELATIONSHIP (CRHI → DEAL)
+ENTR_DEAL_ID
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
+ SourceType, SourceValue, ConditionsJson, SortOrder)
+VALUES
+(
+ 'CRHI',
+ 'RELATIONSHIP',
+ 'DEAL',
+ 'ENTR_DEAL_ID',
+ 'FIELD',
+ 'CisiveCaseId',
+ '[{"Field":"CisiveCaseId","Operator":"IsNotNull"}]',
+ 200
+);
 
-        private static PropertyRule MapToPropertyRule(IcmpRuleEntity entity)
-        {
-            return new PropertyRule
-            {
-                RuleName = $"DOC_{entity.PropertyKey}",
-                PropertyKey = entity.PropertyKey,
-                Action = PropertyAction.Add,
-                ValueExpression = BuildValueExpression(entity),
-                Conditions = DeserializeConditions(entity.ConditionsJson),
-                Order = entity.SortOrder
-            };
-        }
+DEAL SOR_CD = CRC22 (USA ONLY)
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
+ SourceType, SourceValue, ConditionsJson, SortOrder)
+VALUES
+(
+ 'CRHI',
+ 'RELATIONSHIP',
+ 'DEAL',
+ 'SOR_CD',
+ 'STATIC',
+ 'CRC22',
+ '[{"Field":"Country","Operator":"Equals","Values":["USA"]}]',
+ 210
+);
 
-        private static RelationshipRule MapToRelationshipRule(IcmpRuleEntity entity)
-        {
-            return new RelationshipRule
-            {
-                RuleName = $"{entity.TargetObjectType}_{entity.PropertyKey}",
-                ObjectType = entity.TargetObjectType!,
-                PropertyKey = entity.PropertyKey,
-                Action = PropertyAction.Add,
-                ValueExpression = BuildValueExpression(entity),
-                Conditions = DeserializeConditions(entity.ConditionsJson),
-                Order = entity.SortOrder
-            };
-        }
+🧱 PART 4 — CARCO BKGC RULES
+🔹 DOCUMENT RULES (CARCO BKGC)
+DOC_EFFE_DTTM
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, ConditionsJson, SortOrder)
+VALUES
+(
+ 'CARCO BKGC',
+ 'DOCUMENT',
+ 'DOC_EFFE_DTTM',
+ 'FIELD',
+ 'EffectiveDate',
+ '[{"Field":"EffectiveDate","Operator":"IsNotNull"}]',
+ 10
+);
 
-        private static string BuildValueExpression(IcmpRuleEntity entity)
-        {
-            return entity.SourceType.ToUpper() switch
-            {
-                "STATIC" => $"Static:{entity.SourceValue}",
-                _ => entity.SourceValue
-            };
-        }
+COUNTRY
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+(
+ 'CARCO BKGC',
+ 'DOCUMENT',
+ 'COUNTRY',
+ 'FIELD',
+ 'Country',
+ 20
+);
 
-        private static List<RuleCondition> DeserializeConditions(string? json)
-        {
-            if (string.IsNullOrWhiteSpace(json))
-                return new List<RuleCondition>();
+REG_CNT_IND
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
+VALUES
+(
+ 'CARCO BKGC',
+ 'DOCUMENT',
+ 'REG_CNT_IND',
+ 'FIELD',
+ 'Regulated',
+ 30
+);
 
-            return JsonSerializer.Deserialize<List<RuleCondition>>(json)
-                   ?? new List<RuleCondition>();
-        }
-    }
-}
+🔹 EMPLOYEE RELATIONSHIP (CARCO BKGC → EMP_ENTY)
+EMP_ID
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
+ SourceType, SourceValue, ConditionsJson, SortOrder)
+VALUES
+(
+ 'CARCO BKGC',
+ 'RELATIONSHIP',
+ 'EMP_ENTY',
+ 'EMP_ID',
+ 'FIELD',
+ 'EmployeeId',
+ '[{"Field":"EmployeeId","Operator":"IsNotNull"}]',
+ 100
+);
 
+EMP SOR_CD = VSTAR
+INSERT INTO [vstar].[dbo].[IcmpRules]
+(DepartmentCode, TargetType, TargetObjectType, PropertyKey,
+ SourceType, SourceValue, SortOrder)
+VALUES
+(
+ 'CARCO BKGC',
+ 'RELATIONSHIP',
+ 'EMP_ENTY',
+ 'SOR_CD',
+ 'STATIC',
+ 'VSTAR',
+ 110
+);
 
-services.AddScoped<IIcmpRuleRepository, IcmpRuleRepository>();
+✅ FINAL VERIFICATION QUERIES
+SELECT DepartmentCode, TargetType, TargetObjectType, PropertyKey, SortOrder
+FROM [vstar].[dbo].[IcmpRules]
+WHERE DepartmentCode IN ('CRH', 'CRHI', 'CARCO BKGC')
+ORDER BY DepartmentCode, SortOrder;
 
 
 var documentRules =
