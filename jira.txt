@@ -1,40 +1,131 @@
-using Microsoft.Extensions.Configuration;
-using Microsoft.Data.SqlClient;
+from datetime import datetime
+from collections import defaultdict
+from src.repositories.prompt_repository import PromptRepository
 
-// Load appsettings.json
-var config = new ConfigurationBuilder()
-    .AddJsonFile("appsettings.json", optional: false)
-    .Build();
+_repo = PromptRepository()
 
-var connStr = config.GetConnectionString("DefaultConnection")!;
+# ---------- READ ----------
+def get_prompts_for_user(role: str):
+    rows = _repo.get_all()
+    grouped = defaultdict(list)
 
-// Read keys from YOUR application's config file
-var targetConfig = new ConfigurationBuilder()
-    .AddJsonFile("appsettings.json", optional: false)
-    .AddJsonFile("appsettings.Development.json", optional: true)
-    .Build();
+    for r in rows:
+        if r["is_active"] != "true":
+            continue
+        if r["visibility"] not in (role, "employee"):
+            continue
 
-// Flatten key-values
-var allKeys = targetConfig.AsEnumerable()
-    .Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && kv.Value is not null)
-    .ToList();
+        grouped[r["category"]].append({
+            "id": r["id"],
+            "title": r["title"],
+            "content": r["content"],
+            "tags": r["tags"].split(",")
+        })
 
-Console.WriteLine($"Found {allKeys.Count} keys to insert…");
+    return [{"category": k, "prompts": v} for k, v in grouped.items()]
 
-// Insert all into DB (NO check, NO update)
-using var conn = new SqlConnection(connStr);
-await conn.OpenAsync();
 
-foreach (var kv in allKeys)
-{
-    var cmd = conn.CreateCommand();
-    cmd.CommandText = @"INSERT INTO AppConfigs (AppConfigName, AppConfigValue, ModifiedBy) 
-                        VALUES (@name, @value, @modifiedBy)";
-    cmd.Parameters.AddWithValue("@name", kv.Key);
-    cmd.Parameters.AddWithValue("@value", kv.Value ?? "");
-    cmd.Parameters.AddWithValue("@modifiedBy", "Migration");
+# ---------- CREATE ----------
+def create_prompt(data: dict, created_by: str):
+    rows = _repo.get_all()
 
-    await cmd.ExecuteNonQueryAsync();
-}
+    now = datetime.utcnow().isoformat()
+    data["created_by"] = created_by
+    data["created_at"] = now
+    data["updated_at"] = now
+    data["is_active"] = "true"
 
-Console.WriteLine("✅ Insert completed successfully!");
+    rows.append(data)
+    _repo.save_all(rows)
+    return data
+
+
+# ---------- UPDATE ----------
+def update_prompt(prompt_id: str, payload: dict):
+    rows = _repo.get_all()
+    now = datetime.utcnow().isoformat()
+
+    for r in rows:
+        if r["id"] == prompt_id:
+            r.update(payload)
+            r["updated_at"] = now
+            _repo.save_all(rows)
+            return r
+
+    raise ValueError("Prompt not found")
+
+
+# ---------- DELETE (SOFT) ----------
+def delete_prompt(prompt_id: str):
+    rows = _repo.get_all()
+
+    for r in rows:
+        if r["id"] == prompt_id:
+            r["is_active"] = "false"
+            _repo.save_all(rows)
+            return
+
+    raise ValueError("Prompt not found")
+
+
+
+
+
+
+from fastapi import APIRouter, Depends, HTTPException
+from src.handlers.auth_handler import get_current_user
+from src.services.prompt_service import (
+    get_prompts_for_user,
+    create_prompt,
+    update_prompt,
+    delete_prompt
+)
+
+router = APIRouter()
+
+# ---------- READ ----------
+@router.get("/prompts")
+async def get_prompts(user=Depends(get_current_user)):
+    return get_prompts_for_user(user["role"])
+
+
+# ---------- CREATE ----------
+@router.post("/prompts")
+async def add_prompt(payload: dict, user=Depends(get_current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    return create_prompt(payload, user["sub"])
+
+
+# ---------- UPDATE ----------
+@router.put("/prompts/{prompt_id}")
+async def edit_prompt(prompt_id: str, payload: dict, user=Depends(get_current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    return update_prompt(prompt_id, payload)
+
+
+# ---------- DELETE ----------
+@router.delete("/prompts/{prompt_id}")
+async def remove_prompt(prompt_id: str, user=Depends(get_current_user)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    delete_prompt(prompt_id)
+    return {"status": "deleted"}
+
+
+
+from fastapi import FastAPI
+from src.api import auth, user, org_chart, prompts
+
+app = FastAPI()
+
+app.include_router(auth.router, prefix="/api/v1", tags=["Auth"])
+app.include_router(user.router, prefix="/api/v1", tags=["User"])
+app.include_router(org_chart.router, prefix="/api/v1", tags=["OrgChart"])
+app.include_router(prompts.router, prefix="/api/v1", tags=["Prompts"])
+
+
