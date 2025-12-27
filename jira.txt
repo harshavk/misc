@@ -1,131 +1,79 @@
-from datetime import datetime
-from collections import defaultdict
-from src.repositories.prompt_repository import PromptRepository
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from src.utils.jwt_utils import decode_token
 
-_repo = PromptRepository()
+security = HTTPBearer()
 
-# ---------- READ ----------
-def get_prompts_for_user(role: str):
-    rows = _repo.get_all()
-    grouped = defaultdict(list)
+def get_current_user(
+    creds: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = creds.credentials
+    payload = decode_token(token)
 
-    for r in rows:
-        if r["is_active"] != "true":
-            continue
-        if r["visibility"] not in (role, "employee"):
-            continue
+    if not payload or "sub" not in payload:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
-        grouped[r["category"]].append({
-            "id": r["id"],
-            "title": r["title"],
-            "content": r["content"],
-            "tags": r["tags"].split(",")
-        })
-
-    return [{"category": k, "prompts": v} for k, v in grouped.items()]
+    return {
+        "employee_id": payload["sub"],
+        "role": payload.get("role")
+    }
 
 
-# ---------- CREATE ----------
-def create_prompt(data: dict, created_by: str):
-    rows = _repo.get_all()
+import csv
+from pathlib import Path
 
-    now = datetime.utcnow().isoformat()
-    data["created_by"] = created_by
-    data["created_at"] = now
-    data["updated_at"] = now
-    data["is_active"] = "true"
+ORG_FILE = Path("data/org_chart.csv")
 
-    rows.append(data)
-    _repo.save_all(rows)
-    return data
+class OrgRepository:
 
+    def get_direct_reports(self, manager_id: str) -> list[dict]:
+        results = []
 
-# ---------- UPDATE ----------
-def update_prompt(prompt_id: str, payload: dict):
-    rows = _repo.get_all()
-    now = datetime.utcnow().isoformat()
+        with open(ORG_FILE, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("manager_id") == manager_id:
+                    results.append(row)
 
-    for r in rows:
-        if r["id"] == prompt_id:
-            r.update(payload)
-            r["updated_at"] = now
-            _repo.save_all(rows)
-            return r
-
-    raise ValueError("Prompt not found")
+        return results
 
 
-# ---------- DELETE (SOFT) ----------
-def delete_prompt(prompt_id: str):
-    rows = _repo.get_all()
+from src.repositories.org_repository import OrgRepository
 
-    for r in rows:
-        if r["id"] == prompt_id:
-            r["is_active"] = "false"
-            _repo.save_all(rows)
-            return
+_repo = OrgRepository()
 
-    raise ValueError("Prompt not found")
+def get_dashboard_team(employee_id: str):
+    reports = _repo.get_direct_reports(employee_id)
 
-
-
-
-
-
-from fastapi import APIRouter, Depends, HTTPException
-from src.handlers.auth_handler import get_current_user
-from src.services.prompt_service import (
-    get_prompts_for_user,
-    create_prompt,
-    update_prompt,
-    delete_prompt
-)
-
-router = APIRouter()
-
-# ---------- READ ----------
-@router.get("/prompts")
-async def get_prompts(user=Depends(get_current_user)):
-    return get_prompts_for_user(user["role"])
+    return [
+        {
+            "employeeId": r["employee_id"],
+            "name": r["name"],
+            "role": r["role"],
+            "email": r["email"],
+            "image": r["image"]
+        }
+        for r in reports
+    ]
 
 
-# ---------- CREATE ----------
-@router.post("/prompts")
-async def add_prompt(payload: dict, user=Depends(get_current_user)):
-    if user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+from fastapi import APIRouter, Depends
+from src.utils.jwt_dependency import get_current_user
+from src.services.dashboard_service import get_dashboard_team
 
-    return create_prompt(payload, user["sub"])
+router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
-
-# ---------- UPDATE ----------
-@router.put("/prompts/{prompt_id}")
-async def edit_prompt(prompt_id: str, payload: dict, user=Depends(get_current_user)):
-    if user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
-
-    return update_prompt(prompt_id, payload)
+@router.get("/team")
+def get_my_team(current_user=Depends(get_current_user)):
+    employee_id = current_user["employee_id"]
+    return {
+        "managerId": employee_id,
+        "team": get_dashboard_team(employee_id)
+    }
 
 
-# ---------- DELETE ----------
-@router.delete("/prompts/{prompt_id}")
-async def remove_prompt(prompt_id: str, user=Depends(get_current_user)):
-    if user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
+from src.api.dashboard import router as dashboard_router
 
-    delete_prompt(prompt_id)
-    return {"status": "deleted"}
-
-
-
-from fastapi import FastAPI
-from src.api import auth, user, org_chart, prompts
-
-app = FastAPI()
-
-app.include_router(auth.router, prefix="/api/v1", tags=["Auth"])
-app.include_router(user.router, prefix="/api/v1", tags=["User"])
-app.include_router(org_chart.router, prefix="/api/v1", tags=["OrgChart"])
-app.include_router(prompts.router, prefix="/api/v1", tags=["Prompts"])
+app.include_router(dashboard_router)
 
 
