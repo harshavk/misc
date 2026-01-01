@@ -307,3 +307,45 @@ export class AiSearchService {
         };
     }
 }
+
+
+
+
+--------------
+handleMessageFeedback(event: { index: number, type: 'like' | 'dislike' | null }) {
+    
+    // 1. Update Local UI State (Visuals)
+    // This makes the icon turn blue/red immediately
+    this.chatMessages.update(msgs => {
+      const newMsgs = [...msgs];
+      newMsgs[event.index] = { ...newMsgs[event.index], feedback: event.type };
+      return newMsgs;
+    });
+
+    // 2. STOP if the user is just un-clicking (setting to null)
+    if (!event.type) return; 
+
+    // 3. Extract Data for Storage
+    const allMessages = this.chatMessages();
+    const aiMsg = allMessages[event.index];
+    
+    // Try to find the user's question (usually the message before the AI response)
+    const previousMsg = allMessages[event.index - 1];
+    const userQuery = (previousMsg && previousMsg.type === 'human') 
+                      ? previousMsg.content 
+                      : 'Unknown Context';
+
+    // 4. Send to Service (Saves to Browser Storage)
+    this.aiService.logFeedback({
+      id: aiMsg.id || crypto.randomUUID(), // Use msg ID or generate one
+      query: userQuery,
+      aiResponse: aiMsg.content,
+      rating: event.type,
+      category: 'General', // You can pass this.selectedCategory() if available
+      user: this.currentUser()?.name || 'Employee'
+    }).subscribe({
+      next: () => console.log(`✅ Feedback (${event.type}) saved to storage`),
+      error: (err) => console.error('❌ Error saving feedback', err)
+    });
+  }
+}
