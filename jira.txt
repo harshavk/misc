@@ -1,351 +1,81 @@
-import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable, of } from 'rxjs';
-import { delay, map, switchMap, shareReplay, catchError } from 'rxjs/operators';
+// src/app/features/ai-search/ai-search.service.ts
 
-import { environment } from '../../../environments/environment';
-import {
-    AiThreadRequest,
-    AiThreadResponse,
-    ThreadMessage
-} from '../models/ai-thread.models';
-import {
-    ActionResult,
-    AnswerResult,
-    AiSearchResponse,
-} from '../models/ai-search.models';
-import { MockScenario } from '../models/mock-ai.models';
-import { AuthService } from './auth.service';
-import { ApiEndpoints } from '@core/config/api-endpoints';
+logFeedback(entry: Partial<FeedbackEntry>): Observable<void> {
+    const currentData = this.getStoredFeedbackSync();
+    
+    // 1. Check if we already have feedback for this specific Message ID
+    const existingIndex = currentData.findIndex(e => e.id === entry.id);
 
-const MOCK_DATA_URL = 'assets/data/mock-ai-responses.json';
-const FEEDBACK_STORAGE_KEY = 'app_ai_feedback_analytics'; // 👈 Central Key
-
-export interface FeedbackEntry {
-    id: string;
-    query: string;
-    aiResponse: string;
-    user: string;
-    rating: 'like' | 'dislike' | null;
-    timestamp: string;
-    category: 'HR' | 'IT' | 'General';
-}
-
-@Injectable({ providedIn: 'root' })
-export class AiSearchService {
-    private readonly http = inject(HttpClient);
-    private readonly auth = inject(AuthService);
-
-    private mockScenarios$: Observable<MockScenario[]> | null = null;
-
-    // ---------------------------------------------------------------------------
-    // 1. PUBLIC API (SEARCH)
-    // ---------------------------------------------------------------------------
-
-    search(
-        query: string,
-        threadId: string,
-        metadata: Record<string, unknown> = { workflow: 'onboarding' },
-        actor_id?: string
-    ): Observable<AiSearchResponse> {
-
-        const realActorId = actor_id || this.auth.currentUser()?.id || 'anonymous';
-
-        const payload: AiThreadRequest = {
-            message: query,
-            thread_id: threadId,
-            metadata,
-            actor_id: realActorId,
-        };
-
-        const minDelayMs = environment.mockConfig.enableChat ? 1200 : 0;
-        const started = Date.now();
-
-        // 1. Decide Source (Mock JSON vs Real Python API)
-        const response$ = environment.mockConfig.enableChat
-            ? this.getMockResponse(query, payload)
-            : this.http.post<AiThreadResponse>(`${environment.apiBaseUrl}/chat`, payload);
-
-        return response$.pipe(
-            map((raw) =>
-                this.mapToUi(query, raw, environment.mockConfig.enableChat ? 'mock-json' : 'python-api')
-            ),
-            switchMap((uiResponse) => {
-                const elapsed = Date.now() - started;
-                const remainingDelay = Math.max(0, minDelayMs - elapsed);
-                return remainingDelay > 0 ? of(uiResponse).pipe(delay(remainingDelay)) : of(uiResponse);
-            }),
-            catchError(err => {
-                console.error('Search failed', err);
-                return of(this.getErrorResponse(query, threadId));
-            })
-        );
-    }
-
-    // ---------------------------------------------------------------------------
-    // 2. FEEDBACK & ANALYTICS (Browser Storage ONLY)
-    // ---------------------------------------------------------------------------
-
-    /**
-     * ✅ UPDATED: Always reads from LocalStorage, ignoring environment.mockConfig
-     */
-    getFeedbackAnalytics(): Observable<FeedbackEntry[]> {
-        try {
-            const raw = localStorage.getItem(FEEDBACK_STORAGE_KEY);
-            const data: FeedbackEntry[] = raw ? JSON.parse(raw) : [];
-            
-            // Return as observable to match expected component interface
-            return of(data).pipe(delay(600)); 
-        } catch (err) {
-            console.error('Failed to read local feedback', err);
-            return of([]);
+    // CASE A: User removed feedback (clicked same button again) -> DELETE
+    if (!entry.rating) {
+        if (existingIndex > -1) {
+            currentData.splice(existingIndex, 1);
+            console.log('🗑️ Feedback removed for ID:', entry.id);
         }
-    }
-
-    /**
-     * ✅ NEW: Call this when user clicks Like/Dislike to save data for the Admin View
-     */
-    logFeedback(entry: Partial<FeedbackEntry>): Observable<void> {
-        const currentData = this.getStoredFeedbackSync();
-        
+    } 
+    // CASE B: User added/changed feedback -> UPSERT
+    else {
         const newRecord: FeedbackEntry = {
-            id: entry.id || crypto.randomUUID(),
+            id: entry.id!, // Assumes ID is always passed
             query: entry.query || 'Unknown Query',
             aiResponse: entry.aiResponse || '',
-            user: entry.user || this.auth.currentUser()?.name || 'Anonymous',
-            rating: entry.rating || null,
+            user: entry.user || 'Anonymous',
+            rating: entry.rating,
             timestamp: new Date().toISOString(),
             category: entry.category || 'General'
         };
 
-        // Prepend so newest is first
-        const updated = [newRecord, ...currentData];
-        localStorage.setItem(FEEDBACK_STORAGE_KEY, JSON.stringify(updated));
-
-        return of(void 0);
-    }
-
-    // Helper for sync access if needed internally
-    private getStoredFeedbackSync(): FeedbackEntry[] {
-        const raw = localStorage.getItem(FEEDBACK_STORAGE_KEY);
-        return raw ? JSON.parse(raw) : [];
-    }
-
-    // ---------------------------------------------------------------------------
-    // 3. HISTORY MANAGEMENT (Browser Storage)
-    // ---------------------------------------------------------------------------
-
-    loadHistory(threadId: string): Observable<ThreadMessage[]> {
-        const userId = this.auth.currentUser()?.id || 'anon';
-        const key = `wf_chat_${userId}_${threadId}`;
-        const raw = localStorage.getItem(key);
-        return of(raw ? JSON.parse(raw) : []).pipe(delay(200));
-    }
-
-    saveHistory(threadId: string, messages: ThreadMessage[]): Observable<void> {
-        const userId = this.auth.currentUser()?.id || 'anon';
-        const key = `wf_chat_${userId}_${threadId}`;
-        localStorage.setItem(key, JSON.stringify(messages));
-        return of(void 0);
-    }
-
-    clearHistory(threadId: string): Observable<void> {
-        const userId = this.auth.currentUser()?.id || 'anon';
-        const key = `wf_chat_${userId}_${threadId}`;
-        localStorage.removeItem(key);
-        return of(void 0);
-    }
-
-    // ---------------------------------------------------------------------------
-    // 4. MOCK LOGIC (Internals)
-    // ---------------------------------------------------------------------------
-
-    isMockMode(): boolean {
-        return environment.mockConfig.enableFeedback;
-    }
-
-    private getMockResponse(query: string, payload: AiThreadRequest): Observable<AiThreadResponse> {
-        return this.loadMockScenarios().pipe(
-            map((scenarios) => {
-                const scenario = this.pickScenario(query, scenarios);
-                return this.buildThreadFromScenario(payload, scenario);
-            })
-        );
-    }
-
-    private loadMockScenarios(): Observable<MockScenario[]> {
-        if (!this.mockScenarios$) {
-            this.mockScenarios$ = this.http.get<MockScenario[]>(MOCK_DATA_URL).pipe(
-                shareReplay(1),
-                catchError(err => {
-                    console.error('Failed to load mock JSON', err);
-                    return of([]);
-                })
-            );
+        if (existingIndex > -1) {
+            // Update existing
+            currentData[existingIndex] = { ...currentData[existingIndex], ...newRecord };
+            console.log('🔄 Feedback updated:', newRecord);
+        } else {
+            // Create new
+            currentData.unshift(newRecord);
+            console.log('✅ New Feedback created:', newRecord);
         }
-        return this.mockScenarios$;
     }
 
-    private pickScenario(query: string, scenarios: MockScenario[]): MockScenario {
-        const q = query.toLowerCase();
-        const match = scenarios.find((s) =>
-            (s.keywords || []).some((k) => q.includes(k.toLowerCase()))
-        );
-        if (match) return match;
-        return scenarios.find((s) => s.id === 'generic-fallback') ||
-            scenarios[0] ||
-            this.createEmergencyFallback();
-    }
-
-    private buildThreadFromScenario(req: AiThreadRequest, scenario: MockScenario): AiThreadResponse {
-        const now = new Date().toISOString();
-        const base = scenario.thread;
-
-        const messages: ThreadMessage[] = [
-            { type: 'human', content: req.message, tool_call: null },
-            ...base.messages.filter((m) => m.type !== 'human'),
-        ];
-
-        return {
-            reply: base.reply,
-            thread_id: req.thread_id || base.thread_id || 'mock-thread',
-            timestamp: now,
-            messages: messages,
-        };
-    }
-
-    private createEmergencyFallback(): MockScenario {
-        return {
-            id: 'emergency',
-            title: 'System Unavailable',
-            keywords: [],
-            thread: {
-                thread_id: 'emergency-thread',
-                timestamp: new Date().toISOString(),
-                reply: "I am unable to connect to my knowledge base right now.",
-                messages: [{ type: 'ai', content: "I am unable to connect to my knowledge base right now.", tool_call: null }]
-            }
-        };
-    }
-
-    // ---------------------------------------------------------------------------
-    // 5. UI MAPPING
-    // ---------------------------------------------------------------------------
-
-    private mapToUi(query: string, raw: AiThreadResponse, source: string): AiSearchResponse {
-        const createdAt = raw.timestamp || new Date().toISOString();
-
-        return {
-            id: `${raw.thread_id}:${createdAt}`,
-            query,
-            createdAt,
-            answers: this.extractAnswers(raw),
-            actions: this.extractActions(raw, query),
-            meta: {
-                latencyMs: 150,
-                model: 'mock-v1',
-                source: source as any,
-            },
-            threadId: raw.thread_id,
-            historyMessages: raw.messages,
-        };
-    }
-
-    private extractAnswers(raw: AiThreadResponse): AnswerResult[] {
-        const answers: AnswerResult[] = [];
-        if (raw.reply) {
-            answers.push({
-                id: 'ans-main',
-                title: 'Ally',
-                content: raw.reply,
-                type: 'summary',
-                confidence: 1.0,
-                isHtml: false,
-                tags: [],
-                references: []
-            });
-        }
-        return answers;
-    }
-
-    private extractActions(raw: AiThreadResponse, originalQuery: string): ActionResult[] {
-        return raw.messages
-            .filter((m) => !!m.tool_call)
-            .map((m, idx) => {
-                const tc = m.tool_call!;
-                return {
-                    id: `act-${idx}`,
-                    query: originalQuery,
-                    label: tc.name || 'Action',
-                    description: tc.description || '',
-                    icon: 'bolt',
-                    category: (tc.type as any) || 'workflow',
-                    primary: idx === 0,
-                    confidence: 1.0,
-                    payload: tc,
-                    requiresConfirmation: false,
-                    confirmLabel: 'Go',
-                    url: tc.url,
-                    actionType: tc.url ? 'link' : 'workflow'
-                };
-            });
-    }
-
-    private getErrorResponse(query: string, threadId: string): AiSearchResponse {
-        return {
-            id: 'error',
-            query,
-            createdAt: new Date().toISOString(),
-            answers: [{
-                id: 'err', title: 'Error', content: 'Sorry, something went wrong processing your request.',
-                type: 'summary', confidence: 0, isHtml: false, tags: [], references: []
-            }],
-            actions: [],
-            meta: { latencyMs: 0, model: 'error', source: 'error' },
-            threadId,
-            historyMessages: []
-        };
-    }
+    localStorage.setItem(FEEDBACK_STORAGE_KEY, JSON.stringify(currentData));
+    return of(void 0);
 }
 
 
+---------------------
 
+// src/app/features/ai-search/ai-search.component.ts
 
---------------
 handleMessageFeedback(event: { index: number, type: 'like' | 'dislike' | null }) {
-    
-    // 1. Update Local UI State (Visuals)
-    // This makes the icon turn blue/red immediately
+    // 1. Update Visuals
     this.chatMessages.update(msgs => {
       const newMsgs = [...msgs];
       newMsgs[event.index] = { ...newMsgs[event.index], feedback: event.type };
       return newMsgs;
     });
 
-    // 2. STOP if the user is just un-clicking (setting to null)
-    if (!event.type) return; 
-
-    // 3. Extract Data for Storage
+    // 2. Prepare Data
     const allMessages = this.chatMessages();
     const aiMsg = allMessages[event.index];
     
-    // Try to find the user's question (usually the message before the AI response)
+    // Find context (User Query)
     const previousMsg = allMessages[event.index - 1];
     const userQuery = (previousMsg && previousMsg.type === 'human') 
                       ? previousMsg.content 
                       : 'Unknown Context';
 
-    // 4. Send to Service (Saves to Browser Storage)
+    // 3. 🚨 FIX: Pass 'event.type' even if it is NULL (so service can delete)
+    // Ensure we use a stable ID (aiMsg.id). If the message doesn't have an ID, 
+    // generate one ONCE and save it to the message object so it persists.
+    if (!aiMsg.id) {
+        aiMsg.id = crypto.randomUUID(); 
+    }
+
     this.aiService.logFeedback({
-      id: aiMsg.id || crypto.randomUUID(), // Use msg ID or generate one
+      id: aiMsg.id, 
       query: userQuery,
       aiResponse: aiMsg.content,
-      rating: event.type,
-      category: 'General', // You can pass this.selectedCategory() if available
-      user: this.currentUser()?.name || 'Employee'
-    }).subscribe({
-      next: () => console.log(`✅ Feedback (${event.type}) saved to storage`),
-      error: (err) => console.error('❌ Error saving feedback', err)
-    });
-  }
+      rating: event.type, // Can be 'like', 'dislike', or null
+      category: 'General',
+      user: this.currentUser()?.name
+    }).subscribe();
 }
