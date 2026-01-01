@@ -1,4 +1,17 @@
-if (this.data.isManager) {
+updatePrompt() {
+    const selected = this.missingTools
+      .filter(x => x.selected)
+      .map(x => x.req.tool);
+
+    if (selected.length === 0) {
+      this.allyString = "";
+      return;
+    }
+
+    const toolList = selected.map(s => `• ${s}`).join('\n');
+
+    // ✅ LOGIC: Switch prompt based on user role
+    if (this.data.isManager) {
       // MANAGER VIEW: "Grant access to [Employee Name]..."
       this.allyString = `Hi Ally,
 Please grant access for new joiner ${this.data.employeeName} (${this.data.employeeId}).
