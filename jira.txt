@@ -1,5 +1,4 @@
 updatePrompt() {
-    // Get list of selected tool names
     const selected = this.missingTools
       .filter(x => x.selected)
       .map(x => x.req.tool);
@@ -12,53 +11,22 @@ updatePrompt() {
     const toolList = selected.map(s => `• ${s}`).join('\n');
     const empLabel = `${this.data.employeeName} (${this.data.employeeId})`;
 
-    // ---------------------------------------------------------
-    // SCENARIO 1: BUDDY EXISTS (Mirroring Request)
-    // ---------------------------------------------------------
-    if (this.buddyName) {
+    // Check if buddy exists AND is not "N/A"
+    const hasValidBuddy = this.buddyName && this.buddyName.trim().toUpperCase() !== 'N/A';
+
+    if (hasValidBuddy) {
+      // WITH BUDDY (Mirroring)
       if (this.data.isManager) {
-        this.allyString = `Hi Ally,
-Please grant access for ${empLabel} for Project "${this.projectName}".
-Please mirror the access rights of their buddy, ${this.buddyName}.
-
-Required Tools:
-${toolList}
-
-Ref: Manager Override`;
+        this.allyString = `Hi Ally,\nPlease grant access for ${empLabel} for Project "${this.projectName}".\nPlease mirror the access rights of their buddy, ${this.buddyName}.\n\nRequired Tools:\n${toolList}\n\nRef: Manager Override`;
       } else {
-        this.allyString = `Hi Ally,
-I am working on Project "${this.projectName}".
-Please grant me the same access rights as my buddy, ${this.buddyName}.
-
-Required Tools:
-${toolList}
-
-Ref: Onboarding Mirroring`;
+        this.allyString = `Hi Ally,\nI am working on Project "${this.projectName}".\nPlease grant me the same access rights as my buddy, ${this.buddyName}.\n\nRequired Tools:\n${toolList}\n\nRef: Onboarding Mirroring`;
       }
-    } 
-    
-    // ---------------------------------------------------------
-    // SCENARIO 2: NO BUDDY (Standard Request)
-    // ---------------------------------------------------------
-    else {
+    } else {
+      // WITHOUT BUDDY (Standard Request)
       if (this.data.isManager) {
-        this.allyString = `Hi Ally,
-Please provision the necessary project access for ${empLabel}.
-They are joining Project "${this.projectName}".
-
-Required Tools:
-${toolList}
-
-Ref: New Hire Provisioning`;
+        this.allyString = `Hi Ally,\nPlease provision the necessary project access for ${empLabel}.\nThey are joining Project "${this.projectName}".\n\nRequired Tools:\n${toolList}\n\nRef: New Hire Provisioning`;
       } else {
-        this.allyString = `Hi Ally,
-I have joined Project "${this.projectName}".
-Please grant me access to the required environment tools.
-
-Required Tools:
-${toolList}
-
-Ref: Access Request`;
+        this.allyString = `Hi Ally,\nI have joined Project "${this.projectName}".\nPlease grant me access to the required environment tools.\n\nRequired Tools:\n${toolList}\n\nRef: Access Request`;
       }
     }
   }
