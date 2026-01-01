@@ -1,50 +1,24 @@
-import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
-import { inject } from '@angular/core';
-import { Router } from '@angular/router';
-import { catchError, throwError } from 'rxjs';
-import { AuthService } from '../services/auth.service'; // Adjust path if needed
+if (this.data.isManager) {
+      // MANAGER VIEW: "Grant access to [Employee Name]..."
+      this.allyString = `Hi Ally,
+Please grant access for new joiner ${this.data.employeeName} (${this.data.employeeId}).
+They are joining Project "${this.projectName}".
 
-export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  const router = inject(Router);
-  // Optional: inject AuthService to clear user state
-  // const authService = inject(AuthService); 
+Please mirror the access rights of their buddy, ${this.buddyName}.
 
-  return next(req).pipe(
-    catchError((error: HttpErrorResponse) => {
-      
-      // 🚨 TRAP: If API says "401 Unauthorized"
-      if (error.status === 401) {
-        console.warn('Session expired or unauthorized. Redirecting to login...');
-        
-        // 1. (Optional) Clear token/state
-        localStorage.removeItem('token'); 
-        // authService.logout(); 
+Required Tools:
+${toolList}
 
-        // 2. Redirect to Login
-        router.navigate(['/login']);
-      }
+Ref: Manager Override`;
+    } else {
+      // EMPLOYEE VIEW: "Grant access to me..."
+      this.allyString = `Hi Ally,
+I am working on Project "${this.projectName}".
+Please grant me the same access rights as my buddy, ${this.buddyName}.
 
-      // Propagate the error so the component stops loading
-      return throwError(() => error);
-    })
-  );
-};
+Required Tools:
+${toolList}
 
-
-import { ApplicationConfig } from '@angular/core';
-import { provideRouter } from '@angular/router';
-import { provideHttpClient, withInterceptors } from '@angular/common/http'; // 👈 Import this
-
-import { routes } from './app.routes';
-import { authInterceptor } from './core/interceptors/auth.interceptor'; // 👈 Import your interceptor
-
-export const appConfig: ApplicationConfig = {
-  providers: [
-    provideRouter(routes),
-    
-    // ✅ Register the interceptor here
-    provideHttpClient(withInterceptors([
-      authInterceptor
-    ]))
-  ]
-};
+Ref: Onboarding Mirroring`;
+    }
+  }
