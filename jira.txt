@@ -1,4 +1,5 @@
 updatePrompt() {
+    // Get list of selected tool names
     const selected = this.missingTools
       .filter(x => x.selected)
       .map(x => x.req.tool);
@@ -9,23 +10,23 @@ updatePrompt() {
     }
 
     const toolList = selected.map(s => `• ${s}`).join('\n');
+    const empLabel = `${this.data.employeeName} (${this.data.employeeId})`;
 
-    // ✅ LOGIC: Switch prompt based on user role
-    if (this.data.isManager) {
-      // MANAGER VIEW: "Grant access to [Employee Name]..."
-      this.allyString = `Hi Ally,
-Please grant access for new joiner ${this.data.employeeName} (${this.data.employeeId}).
-They are joining Project "${this.projectName}".
-
+    // ---------------------------------------------------------
+    // SCENARIO 1: BUDDY EXISTS (Mirroring Request)
+    // ---------------------------------------------------------
+    if (this.buddyName) {
+      if (this.data.isManager) {
+        this.allyString = `Hi Ally,
+Please grant access for ${empLabel} for Project "${this.projectName}".
 Please mirror the access rights of their buddy, ${this.buddyName}.
 
 Required Tools:
 ${toolList}
 
 Ref: Manager Override`;
-    } else {
-      // EMPLOYEE VIEW: "Grant access to me..."
-      this.allyString = `Hi Ally,
+      } else {
+        this.allyString = `Hi Ally,
 I am working on Project "${this.projectName}".
 Please grant me the same access rights as my buddy, ${this.buddyName}.
 
@@ -33,5 +34,31 @@ Required Tools:
 ${toolList}
 
 Ref: Onboarding Mirroring`;
+      }
+    } 
+    
+    // ---------------------------------------------------------
+    // SCENARIO 2: NO BUDDY (Standard Request)
+    // ---------------------------------------------------------
+    else {
+      if (this.data.isManager) {
+        this.allyString = `Hi Ally,
+Please provision the necessary project access for ${empLabel}.
+They are joining Project "${this.projectName}".
+
+Required Tools:
+${toolList}
+
+Ref: New Hire Provisioning`;
+      } else {
+        this.allyString = `Hi Ally,
+I have joined Project "${this.projectName}".
+Please grant me access to the required environment tools.
+
+Required Tools:
+${toolList}
+
+Ref: Access Request`;
+      }
     }
   }
