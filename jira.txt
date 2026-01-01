@@ -1,79 +1,50 @@
-from fastapi import Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from src.utils.jwt_utils import decode_token
+import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
+import { inject } from '@angular/core';
+import { Router } from '@angular/router';
+import { catchError, throwError } from 'rxjs';
+import { AuthService } from '../services/auth.service'; // Adjust path if needed
 
-security = HTTPBearer()
+export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  const router = inject(Router);
+  // Optional: inject AuthService to clear user state
+  // const authService = inject(AuthService); 
 
-def get_current_user(
-    creds: HTTPAuthorizationCredentials = Depends(security)
-):
-    token = creds.credentials
-    payload = decode_token(token)
+  return next(req).pipe(
+    catchError((error: HttpErrorResponse) => {
+      
+      // 🚨 TRAP: If API says "401 Unauthorized"
+      if (error.status === 401) {
+        console.warn('Session expired or unauthorized. Redirecting to login...');
+        
+        // 1. (Optional) Clear token/state
+        localStorage.removeItem('token'); 
+        // authService.logout(); 
 
-    if not payload or "sub" not in payload:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        // 2. Redirect to Login
+        router.navigate(['/login']);
+      }
 
-    return {
-        "employee_id": payload["sub"],
-        "role": payload.get("role")
-    }
-
-
-import csv
-from pathlib import Path
-
-ORG_FILE = Path("data/org_chart.csv")
-
-class OrgRepository:
-
-    def get_direct_reports(self, manager_id: str) -> list[dict]:
-        results = []
-
-        with open(ORG_FILE, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                if row.get("manager_id") == manager_id:
-                    results.append(row)
-
-        return results
+      // Propagate the error so the component stops loading
+      return throwError(() => error);
+    })
+  );
+};
 
 
-from src.repositories.org_repository import OrgRepository
+import { ApplicationConfig } from '@angular/core';
+import { provideRouter } from '@angular/router';
+import { provideHttpClient, withInterceptors } from '@angular/common/http'; // 👈 Import this
 
-_repo = OrgRepository()
+import { routes } from './app.routes';
+import { authInterceptor } from './core/interceptors/auth.interceptor'; // 👈 Import your interceptor
 
-def get_dashboard_team(employee_id: str):
-    reports = _repo.get_direct_reports(employee_id)
-
-    return [
-        {
-            "employeeId": r["employee_id"],
-            "name": r["name"],
-            "role": r["role"],
-            "email": r["email"],
-            "image": r["image"]
-        }
-        for r in reports
-    ]
-
-
-from fastapi import APIRouter, Depends
-from src.utils.jwt_dependency import get_current_user
-from src.services.dashboard_service import get_dashboard_team
-
-router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
-
-@router.get("/team")
-def get_my_team(current_user=Depends(get_current_user)):
-    employee_id = current_user["employee_id"]
-    return {
-        "managerId": employee_id,
-        "team": get_dashboard_team(employee_id)
-    }
-
-
-from src.api.dashboard import router as dashboard_router
-
-app.include_router(dashboard_router)
-
-
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideRouter(routes),
+    
+    // ✅ Register the interceptor here
+    provideHttpClient(withInterceptors([
+      authInterceptor
+    ]))
+  ]
+};
