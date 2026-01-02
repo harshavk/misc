@@ -1,63 +1,18 @@
-// src/app/features/mybuddy/mybuddy.ts
+// 1. Wait for History to Load FIRST
+  this.loadActiveThread().subscribe({
+    next: (msgs) => {
+      // A. Set the history
+      this.chatMessages.set(msgs);
+      this.isLoading.set(false);
 
-ngOnInit(): void {
-  this.restoreSidebarHistory();
-  this.loadActiveThread();
-
-  setTimeout(() => {
-    this.isInitializing.set(false);
-  }, 1500);
-
-  this.startHelperRotation();
-
-  // -----------------------------------------------------------
-  // ✅ FIX 1: Check for "State" (Redirect from Dashboard)
-  // -----------------------------------------------------------
-  const state = history.state as { autoPrompt?: string };
-  if (state && state.autoPrompt) {
-    // Bypass the form control and manually trigger the flow
-    this.handleRedirectPrompt(state.autoPrompt);
-  }
-
-  // -----------------------------------------------------------
-  // ✅ FIX 2: Check for "Query Params" (Deep links)
-  // -----------------------------------------------------------
-  this.route.queryParams.subscribe(params => {
-    const incomingQuery = params['q'];
-    if (incomingQuery) {
-      this.queryControl.setValue(incomingQuery);
-      this.submitQuery();
-      // Clear the URL param so a refresh doesn't re-trigger it
-      this.router.navigate([], { queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      // B. NOW check for the redirect prompt (Safe to add now)
+      this.checkAndRunAutoPrompt();
+    },
+    error: () => {
+      this.chatMessages.set([]);
+      this.isLoading.set(false);
+      
+      // Even if history fails, we still want to run the prompt
+      this.checkAndRunAutoPrompt();
     }
   });
-}
-
-// -----------------------------------------------------------
-// ✅ NEW HELPER: Handles the Redirect Logic manually
-// -----------------------------------------------------------
-private handleRedirectPrompt(prompt: string) {
-  // 1. Manually construct the "Human" message
-  // We use crypto.randomUUID() to ensure the trackBy function works
-  const userMsg: ThreadMessage = {
-    id: crypto.randomUUID(), 
-    type: 'human',
-    content: prompt,
-    tool_call: null,
-    localTimestamp: new Date().toISOString()
-  };
-
-  // 2. Push to UI Signal IMMEDIATELY
-  this.chatMessages.update((list) => [...list, userMsg]);
-
-  // 3. Set Loading States
-  this.isLoading.set(true);
-  this.isAiTyping.set(true);
-
-  // 4. Call API
-  this.ai.search(prompt, this.currentThreadId(), { workflow: 'onboarding-redirect' }, this.currentUser()?.id)
-    .subscribe({
-      next: (res) => this.handleSearchSuccess(prompt, res),
-      error: (err) => this.handleSearchError(err),
-    });
-}
