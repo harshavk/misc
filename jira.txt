@@ -1,25 +1,40 @@
-// 1. Wait for History to Load FIRST
+ngOnInit(): void {
+  this.restoreSidebarHistory();
+
+  // 1. Wait for History to finish loading
   this.loadActiveThread().subscribe({
     next: (msgs) => {
-      // A. Set the history
+      // A. Set the history first
       this.chatMessages.set(msgs);
       this.isLoading.set(false);
 
-      // B. NOW check for the redirect prompt (Safe to add now)
-      this.checkAndRunAutoPrompt();
+      // B. ✅ AUTO-ENTER LOGIC
+      // Now that history is safe, check if we need to auto-submit
+      const state = history.state as { autoPrompt?: string };
+      if (state && state.autoPrompt) {
+        
+        // 1. Fill the text area
+        this.queryControl.setValue(state.autoPrompt);
+        
+        // 2. "Click Enter" programmatically
+        this.submitQuery(); 
+      }
     },
     error: () => {
+      // Even if history fails, we allow the new chat to start
       this.chatMessages.set([]);
       this.isLoading.set(false);
       
-      // Even if history fails, we still want to run the prompt
-      this.checkAndRunAutoPrompt();
+      const state = history.state as { autoPrompt?: string };
+      if (state && state.autoPrompt) {
+        this.queryControl.setValue(state.autoPrompt);
+        this.submitQuery();
+      }
     }
   });
 
-private checkAndRunAutoPrompt() {
-  const state = history.state as { autoPrompt?: string };
-  if (state && state.autoPrompt) {
-    this.handleRedirectPrompt(state.autoPrompt);
-  }
+  setTimeout(() => this.isInitializing.set(false), 1500);
+  this.startHelperRotation();
+  
+  // (Optional) Keep your URL query params logic here too if needed
 }
