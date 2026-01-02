@@ -1,73 +1,85 @@
 // src/app/features/mybuddy/mybuddy.ts
 
-private loadActiveThread(onComplete?: () => void) {
-  this.isLoading.set(true);
+submitQuery(): void {
+  this.error.set(null);
   
-  // ✅ REVERTED: We subscribe here again, so it works for reuseHistoryItem too
-  this.ai.loadHistory(this.currentThreadId()).subscribe({
-    next: (msgs) => {
-      this.chatMessages.set(msgs);
-      this.isLoading.set(false);
-      
-      // ✅ Run the callback if one was provided (e.g., for Redirects)
-      if (onComplete) onComplete();
-    },
-    error: () => {
-      this.chatMessages.set([]);
-      this.isLoading.set(false);
-      
-      // Run callback even on error so we don't block the user
-      if (onComplete) onComplete();
-    }
+  // 1. Validate
+  if (this.queryControl.invalid) {
+    this.queryControl.markAsTouched();
+    this.error.set('Please enter at least 3 characters.');
+    return;
+  }
+  
+  const query = this.queryControl.value.trim();
+  if (!query) return;
+
+  // 2. ✅ FIX: Create message WITH A UNIQUE ID
+  const tempId = crypto.randomUUID(); // Generates a unique string ID
+  const userMsg: ThreadMessage = this.withLocalTimestamp({ 
+    id: tempId, // <--- IMPORTANT
+    type: 'human', 
+    content: query, 
+    tool_call: null 
   });
+
+  // 3. Update Signal immediately (Optimistic Update)
+  this.chatMessages.update((list) => [...list, userMsg]);
+
+  // 4. Set Loading State
+  this.isLoading.set(true);
+  this.isAiTyping.set(true);
+  this.queryControl.setValue(''); // Clear input
+
+  // 5. Call API
+  this.ai.search(query, this.currentThreadId(), { workflow: 'onboarding' }, this.currentUser()?.id)
+    .subscribe({
+      next: (res) => this.handleSearchSuccess(query, res),
+      error: (err) => this.handleSearchError(err),
+    });
 }
 
-----------------
-// src/app/features/mybuddy/mybuddy.ts
+
+----------------------// src/app/features/mybuddy/mybuddy.ts
 
 ngOnInit(): void {
   this.restoreSidebarHistory();
 
-  // 1. Load History -> THEN Run the Auto-Prompt Logic
+  // 1. Load History -> THEN Run Auto-Prompt
   this.loadActiveThread(() => {
     
+    // This runs strictly AFTER history is loaded
     const state = history.state as { autoPrompt?: string };
+    
     if (state && state.autoPrompt) {
       console.log('🚀 Executing Auto-Prompt:', state.autoPrompt);
       
-      // A. Populate the text box
+      // A. Set the value
       this.queryControl.setValue(state.autoPrompt);
       
-      // B. "Press Enter" programmatically
+      // B. Trigger the submit (which now generates a valid ID)
       this.submitQuery();
     }
-    
   });
 
   setTimeout(() => this.isInitializing.set(false), 1500);
   this.startHelperRotation();
   
-  // URL Query Params Logic (Keep as is)
-  this.route.queryParams.subscribe(params => {
-     const incomingQuery = params['q'];
-     if (incomingQuery) {
-       this.queryControl.setValue(incomingQuery);
-       this.submitQuery();
-       this.router.navigate([], { queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true });
-     }
-  });
+  // ... queryParams subscription ...
 }
 
----------
-
-reuseHistoryItem(item: ChatHistoryItem): void {
-  this.currentThreadId.set(item.id);
-  this.error.set(null);
-  this.isAiTyping.set(false);
-  
-  // ✅ This works again because the method subscribes internally
-  this.loadActiveThread(); 
-  
-  this.queryControl.setValue(item.query || '');
-  if (window.innerWidth <= 1000) this.mobileView.set('chat');
+// Ensure loadActiveThread supports the callback
+private loadActiveThread(onComplete?: () => void) {
+  this.isLoading.set(true);
+  this.ai.loadHistory(this.currentThreadId()).subscribe({
+    next: (msgs) => {
+      this.chatMessages.set(msgs);
+      this.isLoading.set(false);
+      if (onComplete) onComplete();
+    },
+    error: () => {
+      this.chatMessages.set([]);
+      this.isLoading.set(false);
+      if (onComplete) onComplete();
+    }
+  });
 }
