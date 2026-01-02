@@ -1,35 +1,28 @@
 // src/app/features/mybuddy/mybuddy.ts
-
-// 1. Import the Child Component
 import { ChatAreaComponent } from './components/chat-area/chat-area'; 
 
 export class MyBuddy implements OnInit, OnDestroy {
-
-  // 2. Get reference to the child component
   @ViewChild(ChatAreaComponent) private chatArea!: ChatAreaComponent;
 
   ngOnInit(): void {
+    // 1. Check State IMMEDIATELY (Synchronously)
     const state = history.state as { autoPrompt?: string };
-    
-    // Flag to track if we handled a redirect (so we don't double-submit via URL params)
-    let handledViaState = false;
+    const hasRedirectPrompt = !!(state && state.autoPrompt); // Create a flag
 
     this.restoreSidebarHistory();
 
-    // --- LOGIC A: Handle Redirect (State) ---
+    // 2. Load History Logic
     this.loadActiveThread(() => {
-      if (state && state.autoPrompt) {
+      // If we have a redirect prompt, pre-fill it now
+      if (hasRedirectPrompt) {
         console.log('📝 Pre-filling input from State:', state.autoPrompt);
         
-        // 1. Set the text (Do NOT submit)
+        // Set value only (No Submit)
         this.queryControl.setValue(state.autoPrompt!);
-        handledViaState = true; 
 
-        // 2. Focus the input using the Child Component reference
+        // Focus the child input
         setTimeout(() => {
-          if (this.chatArea) {
-            this.chatArea.focusInput();
-          }
+          if (this.chatArea) this.chatArea.focusInput();
         }, 100);
       }
     });
@@ -37,30 +30,21 @@ export class MyBuddy implements OnInit, OnDestroy {
     setTimeout(() => this.isInitializing.set(false), 1500);
     this.startHelperRotation();
     
-    // --- LOGIC B: Handle Deep Links (Query Params) ---
+    // 3. Query Params Logic (Blocked if Redirect exists)
     this.route.queryParams.subscribe(params => {
        const incomingQuery = params['q'];
        
-       // Only run this if we DIDN'T just handle a state redirect
-       if (incomingQuery && !handledViaState) {
-         console.log('🔗 Pre-filling input from URL');
+       // 🛑 STOP: If we already have a redirect prompt, IGNORE the URL
+       if (hasRedirectPrompt) {
+         return; 
+       }
+
+       if (incomingQuery) {
+         console.log('🔗 Auto-submitting from URL');
          this.queryControl.setValue(incomingQuery);
          this.submitQuery();
          this.router.navigate([], { queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true });
        }
     });
-  }
-}
-
----------------
-// src/app/features/mybuddy/components/chat-area/chat-area.ts
-
-export class ChatAreaComponent {
-  // ... existing code ...
-  @ViewChild('chatInput') private chatInput!: ElementRef<HTMLTextAreaElement>;
-
-  // ✅ Add this Public Method
-  focusInput(): void {
-    this.chatInput?.nativeElement?.focus();
   }
 }
