@@ -1,3 +1,38 @@
+// src/app/core/services/ai-search.service.ts
+
+export class AiSearchService {
+  // ... existing code ...
+
+  // ✅ Add this property
+  private _pendingRedirectPrompt: string | null = null;
+
+  setRedirectPrompt(prompt: string) {
+    this._pendingRedirectPrompt = prompt;
+  }
+
+  getAndClearRedirectPrompt(): string | null {
+    const temp = this._pendingRedirectPrompt;
+    this._pendingRedirectPrompt = null; // Clear it so it doesn't run again on refresh
+    return temp;
+  }
+}
+
+// src/app/features/employee-detail/employee-detail.component.ts
+
+openAccessDialog() {
+  const dialogRef = this.dialog.open(BuddyAccessDialog, { /*...*/ });
+
+  dialogRef.afterClosed().subscribe(result => {
+    if (result) {
+      // ✅ 1. Store the prompt in the service
+      this.aiService.setRedirectPrompt(result);
+      
+      // ✅ 2. Navigate cleanly (No query params, no state)
+      this.router.navigate(['/ally']); 
+    }
+  });
+}
+
 // src/app/features/mybuddy/mybuddy.ts
 import { ChatAreaComponent } from './components/chat-area/chat-area'; 
 
@@ -5,22 +40,22 @@ export class MyBuddy implements OnInit, OnDestroy {
   @ViewChild(ChatAreaComponent) private chatArea!: ChatAreaComponent;
 
   ngOnInit(): void {
-    // 1. Check State IMMEDIATELY (Synchronously)
-    const state = history.state as { autoPrompt?: string };
-    const hasRedirectPrompt = !!(state && state.autoPrompt); // Create a flag
+    // 1. Check Service for pending prompt (Synchronously)
+    const pendingPrompt = this.ai.getAndClearRedirectPrompt();
+    const hasRedirect = !!pendingPrompt;
 
     this.restoreSidebarHistory();
 
-    // 2. Load History Logic
+    // 2. Load History
     this.loadActiveThread(() => {
-      // If we have a redirect prompt, pre-fill it now
-      if (hasRedirectPrompt) {
-        console.log('📝 Pre-filling input from State:', state.autoPrompt);
+      // If we have a prompt from the service, use it
+      if (pendingPrompt) {
+        console.log('📝 Pre-filling input from Service:', pendingPrompt);
         
-        // Set value only (No Submit)
-        this.queryControl.setValue(state.autoPrompt!);
+        // A. Set Text (No Submit)
+        this.queryControl.setValue(pendingPrompt);
 
-        // Focus the child input
+        // B. Focus Input
         setTimeout(() => {
           if (this.chatArea) this.chatArea.focusInput();
         }, 100);
@@ -30,15 +65,12 @@ export class MyBuddy implements OnInit, OnDestroy {
     setTimeout(() => this.isInitializing.set(false), 1500);
     this.startHelperRotation();
     
-    // 3. Query Params Logic (Blocked if Redirect exists)
+    // 3. Query Params Logic (Blocked if we found a Redirect Prompt)
     this.route.queryParams.subscribe(params => {
-       const incomingQuery = params['q'];
-       
-       // 🛑 STOP: If we already have a redirect prompt, IGNORE the URL
-       if (hasRedirectPrompt) {
-         return; 
-       }
+       // If we already handled a service redirect, IGNORE the URL
+       if (hasRedirect) return;
 
+       const incomingQuery = params['q'];
        if (incomingQuery) {
          console.log('🔗 Auto-submitting from URL');
          this.queryControl.setValue(incomingQuery);
