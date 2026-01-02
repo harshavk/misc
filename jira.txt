@@ -1,26 +1,26 @@
 // src/app/features/mybuddy/mybuddy.ts
 
 ngOnInit(): void {
-  // 1. Capture the Redirect Data IMMEDIATELY
+  // 1. Capture State
   const state = history.state as { autoPrompt?: string };
-  
+
   this.restoreSidebarHistory();
 
-  // 2. Load History First
+  // 2. Load History
   this.loadActiveThread(() => {
     
-    // 3. CHECK: Did we come from a redirect?
+    // 3. After history loads, check for redirect
     if (state && state.autoPrompt) {
-      console.log('🚀 Redirect detected:', state.autoPrompt);
+      console.log('📝 Pre-filling input with:', state.autoPrompt);
 
-      // ✅ FIX: Use setTimeout to wait for the History to render
+      // ✅ FIX: "!" tells TypeScript it's not undefined
+      // We just set the text. We do NOT auto-submit.
+      this.queryControl.setValue(state.autoPrompt!);
+      
+      // Optional: Focus the input so they can just hit Enter
       setTimeout(() => {
-        // A. Set the text in the box
-        this.queryControl.setValue(state.autoPrompt);
-
-        // B. "Click Enter"
-        this.submitQuery();
-      }, 50); // 50ms delay is enough to separate the updates
+        this.chatInput.nativeElement.focus();
+      }, 100);
     }
   });
 
@@ -28,5 +28,12 @@ ngOnInit(): void {
   this.startHelperRotation();
   
   // URL Query Params Logic...
-  this.route.queryParams.subscribe(params => { /* ... */ });
+  this.route.queryParams.subscribe(params => {
+     const incomingQuery = params['q'];
+     if (incomingQuery) {
+       this.queryControl.setValue(incomingQuery);
+       this.submitQuery();
+       this.router.navigate([], { queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true });
+     }
+  });
 }
