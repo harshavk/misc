@@ -16,3 +16,10 @@
       this.checkAndRunAutoPrompt();
     }
   });
+
+private checkAndRunAutoPrompt() {
+  const state = history.state as { autoPrompt?: string };
+  if (state && state.autoPrompt) {
+    this.handleRedirectPrompt(state.autoPrompt);
+  }
+}
