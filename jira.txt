@@ -1,81 +1,63 @@
-// src/app/features/ai-search/ai-search.service.ts
+// src/app/features/mybuddy/mybuddy.ts
 
-logFeedback(entry: Partial<FeedbackEntry>): Observable<void> {
-    const currentData = this.getStoredFeedbackSync();
-    
-    // 1. Check if we already have feedback for this specific Message ID
-    const existingIndex = currentData.findIndex(e => e.id === entry.id);
+ngOnInit(): void {
+  this.restoreSidebarHistory();
+  this.loadActiveThread();
 
-    // CASE A: User removed feedback (clicked same button again) -> DELETE
-    if (!entry.rating) {
-        if (existingIndex > -1) {
-            currentData.splice(existingIndex, 1);
-            console.log('🗑️ Feedback removed for ID:', entry.id);
-        }
-    } 
-    // CASE B: User added/changed feedback -> UPSERT
-    else {
-        const newRecord: FeedbackEntry = {
-            id: entry.id!, // Assumes ID is always passed
-            query: entry.query || 'Unknown Query',
-            aiResponse: entry.aiResponse || '',
-            user: entry.user || 'Anonymous',
-            rating: entry.rating,
-            timestamp: new Date().toISOString(),
-            category: entry.category || 'General'
-        };
+  setTimeout(() => {
+    this.isInitializing.set(false);
+  }, 1500);
 
-        if (existingIndex > -1) {
-            // Update existing
-            currentData[existingIndex] = { ...currentData[existingIndex], ...newRecord };
-            console.log('🔄 Feedback updated:', newRecord);
-        } else {
-            // Create new
-            currentData.unshift(newRecord);
-            console.log('✅ New Feedback created:', newRecord);
-        }
+  this.startHelperRotation();
+
+  // -----------------------------------------------------------
+  // ✅ FIX 1: Check for "State" (Redirect from Dashboard)
+  // -----------------------------------------------------------
+  const state = history.state as { autoPrompt?: string };
+  if (state && state.autoPrompt) {
+    // Bypass the form control and manually trigger the flow
+    this.handleRedirectPrompt(state.autoPrompt);
+  }
+
+  // -----------------------------------------------------------
+  // ✅ FIX 2: Check for "Query Params" (Deep links)
+  // -----------------------------------------------------------
+  this.route.queryParams.subscribe(params => {
+    const incomingQuery = params['q'];
+    if (incomingQuery) {
+      this.queryControl.setValue(incomingQuery);
+      this.submitQuery();
+      // Clear the URL param so a refresh doesn't re-trigger it
+      this.router.navigate([], { queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true });
     }
-
-    localStorage.setItem(FEEDBACK_STORAGE_KEY, JSON.stringify(currentData));
-    return of(void 0);
+  });
 }
 
+// -----------------------------------------------------------
+// ✅ NEW HELPER: Handles the Redirect Logic manually
+// -----------------------------------------------------------
+private handleRedirectPrompt(prompt: string) {
+  // 1. Manually construct the "Human" message
+  // We use crypto.randomUUID() to ensure the trackBy function works
+  const userMsg: ThreadMessage = {
+    id: crypto.randomUUID(), 
+    type: 'human',
+    content: prompt,
+    tool_call: null,
+    localTimestamp: new Date().toISOString()
+  };
 
----------------------
+  // 2. Push to UI Signal IMMEDIATELY
+  this.chatMessages.update((list) => [...list, userMsg]);
 
-// src/app/features/ai-search/ai-search.component.ts
+  // 3. Set Loading States
+  this.isLoading.set(true);
+  this.isAiTyping.set(true);
 
-handleMessageFeedback(event: { index: number, type: 'like' | 'dislike' | null }) {
-    // 1. Update Visuals
-    this.chatMessages.update(msgs => {
-      const newMsgs = [...msgs];
-      newMsgs[event.index] = { ...newMsgs[event.index], feedback: event.type };
-      return newMsgs;
+  // 4. Call API
+  this.ai.search(prompt, this.currentThreadId(), { workflow: 'onboarding-redirect' }, this.currentUser()?.id)
+    .subscribe({
+      next: (res) => this.handleSearchSuccess(prompt, res),
+      error: (err) => this.handleSearchError(err),
     });
-
-    // 2. Prepare Data
-    const allMessages = this.chatMessages();
-    const aiMsg = allMessages[event.index];
-    
-    // Find context (User Query)
-    const previousMsg = allMessages[event.index - 1];
-    const userQuery = (previousMsg && previousMsg.type === 'human') 
-                      ? previousMsg.content 
-                      : 'Unknown Context';
-
-    // 3. 🚨 FIX: Pass 'event.type' even if it is NULL (so service can delete)
-    // Ensure we use a stable ID (aiMsg.id). If the message doesn't have an ID, 
-    // generate one ONCE and save it to the message object so it persists.
-    if (!aiMsg.id) {
-        aiMsg.id = crypto.randomUUID(); 
-    }
-
-    this.aiService.logFeedback({
-      id: aiMsg.id, 
-      query: userQuery,
-      aiResponse: aiMsg.content,
-      rating: event.type, // Can be 'like', 'dislike', or null
-      category: 'General',
-      user: this.currentUser()?.name
-    }).subscribe();
 }
