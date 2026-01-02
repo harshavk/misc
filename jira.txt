@@ -1,40 +1,73 @@
-ngOnInit(): void {
-  this.restoreSidebarHistory();
+// src/app/features/mybuddy/mybuddy.ts
 
-  // 1. Wait for History to finish loading
-  this.loadActiveThread().subscribe({
+private loadActiveThread(onComplete?: () => void) {
+  this.isLoading.set(true);
+  
+  // ✅ REVERTED: We subscribe here again, so it works for reuseHistoryItem too
+  this.ai.loadHistory(this.currentThreadId()).subscribe({
     next: (msgs) => {
-      // A. Set the history first
       this.chatMessages.set(msgs);
       this.isLoading.set(false);
-
-      // B. ✅ AUTO-ENTER LOGIC
-      // Now that history is safe, check if we need to auto-submit
-      const state = history.state as { autoPrompt?: string };
-      if (state && state.autoPrompt) {
-        
-        // 1. Fill the text area
-        this.queryControl.setValue(state.autoPrompt);
-        
-        // 2. "Click Enter" programmatically
-        this.submitQuery(); 
-      }
+      
+      // ✅ Run the callback if one was provided (e.g., for Redirects)
+      if (onComplete) onComplete();
     },
     error: () => {
-      // Even if history fails, we allow the new chat to start
       this.chatMessages.set([]);
       this.isLoading.set(false);
       
-      const state = history.state as { autoPrompt?: string };
-      if (state && state.autoPrompt) {
-        this.queryControl.setValue(state.autoPrompt);
-        this.submitQuery();
-      }
+      // Run callback even on error so we don't block the user
+      if (onComplete) onComplete();
     }
+  });
+}
+
+----------------
+// src/app/features/mybuddy/mybuddy.ts
+
+ngOnInit(): void {
+  this.restoreSidebarHistory();
+
+  // 1. Load History -> THEN Run the Auto-Prompt Logic
+  this.loadActiveThread(() => {
+    
+    const state = history.state as { autoPrompt?: string };
+    if (state && state.autoPrompt) {
+      console.log('🚀 Executing Auto-Prompt:', state.autoPrompt);
+      
+      // A. Populate the text box
+      this.queryControl.setValue(state.autoPrompt);
+      
+      // B. "Press Enter" programmatically
+      this.submitQuery();
+    }
+    
   });
 
   setTimeout(() => this.isInitializing.set(false), 1500);
   this.startHelperRotation();
   
-  // (Optional) Keep your URL query params logic here too if needed
+  // URL Query Params Logic (Keep as is)
+  this.route.queryParams.subscribe(params => {
+     const incomingQuery = params['q'];
+     if (incomingQuery) {
+       this.queryControl.setValue(incomingQuery);
+       this.submitQuery();
+       this.router.navigate([], { queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true });
+     }
+  });
+}
+
+---------
+
+reuseHistoryItem(item: ChatHistoryItem): void {
+  this.currentThreadId.set(item.id);
+  this.error.set(null);
+  this.isAiTyping.set(false);
+  
+  // ✅ This works again because the method subscribes internally
+  this.loadActiveThread(); 
+  
+  this.queryControl.setValue(item.query || '');
+  if (window.innerWidth <= 1000) this.mobileView.set('chat');
 }
