@@ -1,85 +1,32 @@
 // src/app/features/mybuddy/mybuddy.ts
 
-submitQuery(): void {
-  this.error.set(null);
-  
-  // 1. Validate
-  if (this.queryControl.invalid) {
-    this.queryControl.markAsTouched();
-    this.error.set('Please enter at least 3 characters.');
-    return;
-  }
-  
-  const query = this.queryControl.value.trim();
-  if (!query) return;
-
-  // 2. ✅ FIX: Create message WITH A UNIQUE ID
-  const tempId = crypto.randomUUID(); // Generates a unique string ID
-  const userMsg: ThreadMessage = this.withLocalTimestamp({ 
-    id: tempId, // <--- IMPORTANT
-    type: 'human', 
-    content: query, 
-    tool_call: null 
-  });
-
-  // 3. Update Signal immediately (Optimistic Update)
-  this.chatMessages.update((list) => [...list, userMsg]);
-
-  // 4. Set Loading State
-  this.isLoading.set(true);
-  this.isAiTyping.set(true);
-  this.queryControl.setValue(''); // Clear input
-
-  // 5. Call API
-  this.ai.search(query, this.currentThreadId(), { workflow: 'onboarding' }, this.currentUser()?.id)
-    .subscribe({
-      next: (res) => this.handleSearchSuccess(query, res),
-      error: (err) => this.handleSearchError(err),
-    });
-}
-
-
-----------------------// src/app/features/mybuddy/mybuddy.ts
-
 ngOnInit(): void {
+  // 1. Capture the Redirect Data IMMEDIATELY
+  const state = history.state as { autoPrompt?: string };
+  
   this.restoreSidebarHistory();
 
-  // 1. Load History -> THEN Run Auto-Prompt
+  // 2. Load History First
   this.loadActiveThread(() => {
     
-    // This runs strictly AFTER history is loaded
-    const state = history.state as { autoPrompt?: string };
-    
+    // 3. CHECK: Did we come from a redirect?
     if (state && state.autoPrompt) {
-      console.log('🚀 Executing Auto-Prompt:', state.autoPrompt);
-      
-      // A. Set the value
-      this.queryControl.setValue(state.autoPrompt);
-      
-      // B. Trigger the submit (which now generates a valid ID)
-      this.submitQuery();
+      console.log('🚀 Redirect detected:', state.autoPrompt);
+
+      // ✅ FIX: Use setTimeout to wait for the History to render
+      setTimeout(() => {
+        // A. Set the text in the box
+        this.queryControl.setValue(state.autoPrompt);
+
+        // B. "Click Enter"
+        this.submitQuery();
+      }, 50); // 50ms delay is enough to separate the updates
     }
   });
 
   setTimeout(() => this.isInitializing.set(false), 1500);
   this.startHelperRotation();
   
-  // ... queryParams subscription ...
-}
-
-// Ensure loadActiveThread supports the callback
-private loadActiveThread(onComplete?: () => void) {
-  this.isLoading.set(true);
-  this.ai.loadHistory(this.currentThreadId()).subscribe({
-    next: (msgs) => {
-      this.chatMessages.set(msgs);
-      this.isLoading.set(false);
-      if (onComplete) onComplete();
-    },
-    error: () => {
-      this.chatMessages.set([]);
-      this.isLoading.set(false);
-      if (onComplete) onComplete();
-    }
-  });
+  // URL Query Params Logic...
+  this.route.queryParams.subscribe(params => { /* ... */ });
 }
