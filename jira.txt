@@ -1,82 +1,82 @@
-// src/app/core/services/ai-search.service.ts
+// in org-chart.service.ts
 
-export class AiSearchService {
-  // ... existing code ...
+getInitialTree(viewMode: 'FULL_ORG' | 'MY_TEAM' = 'MY_TEAM'): Observable<EmployeeNode[]> {
+    const currentUserId = this.authService.getCurrentUserId();
 
-  // ✅ Add this property
-  private _pendingRedirectPrompt: string | null = null;
+    // ... (Mock Mode Logic) ...
+    // Inside the map() or subscribe():
 
-  setRedirectPrompt(prompt: string) {
-    this._pendingRedirectPrompt = prompt;
-  }
+        this.rawDataCache = this.mapWorkdayResponse(data, currentUserId);
 
-  getAndClearRedirectPrompt(): string | null {
-    const temp = this._pendingRedirectPrompt;
-    this._pendingRedirectPrompt = null; // Clear it so it doesn't run again on refresh
-    return temp;
-  }
+        if (viewMode === 'MY_TEAM') {
+            // ✅ MODE 1: Show ONLY Manager + Direct Reports
+            return this.filterForTeamView(this.rawDataCache, currentUserId);
+        } else {
+            // ✅ MODE 2: Show WHOLE TREE (Start at CEO, auto-expand path to you)
+            return this.buildFullTreeWithFocus(this.rawDataCache);
+        }
 }
 
-// src/app/features/employee-detail/employee-detail.component.ts
+----------
+// in org-chart.service.ts
 
-openAccessDialog() {
-  const dialogRef = this.dialog.open(BuddyAccessDialog, { /*...*/ });
+// REPLACES 'pruneTreeForUser'
+private buildFullTreeWithFocus(nodes: EmployeeNode[]): EmployeeNode[] {
+    return nodes.map(node => {
+        // Check if the current user is somewhere inside this branch
+        const isUserInBranch = this.checkBranchForUser(node);
 
-  dialogRef.afterClosed().subscribe(result => {
-    if (result) {
-      // ✅ 1. Store the prompt in the service
-      this.aiService.setRedirectPrompt(result);
-      
-      // ✅ 2. Navigate cleanly (No query params, no state)
-      this.router.navigate(['/ally']); 
-    }
-  });
+        if (isUserInBranch) {
+            // ✅ EXPAND this node because the user is below it
+            return {
+                ...node,
+                expanded: true, 
+                // Recursively process children to keep the path open
+                reports: this.buildFullTreeWithFocus(node.reports || [])
+            };
+        } else {
+            // ✅ COLLAPSE this node, but KEEP data (don't set reports to [])
+            // This allows the user to click (+) and explore other teams
+            return {
+                ...node,
+                expanded: false,
+                // Ensure reports exist so the (+) icon appears
+                hasChildren: node.reports && node.reports.length > 0
+                // We do NOT recurse here to save performance; raw data is already there
+            };
+        }
+    });
 }
 
-// src/app/features/mybuddy/mybuddy.ts
-import { ChatAreaComponent } from './components/chat-area/chat-area'; 
+----------
+// in org-chart.service.ts
 
-export class MyBuddy implements OnInit, OnDestroy {
-  @ViewChild(ChatAreaComponent) private chatArea!: ChatAreaComponent;
+private filterForTeamView(nodes: EmployeeNode[], userId: string): EmployeeNode[] {
+    // 1. Find your manager
+    const manager = this.findParentOfUser(nodes, userId);
 
-  ngOnInit(): void {
-    // 1. Check Service for pending prompt (Synchronously)
-    const pendingPrompt = this.ai.getAndClearRedirectPrompt();
-    const hasRedirect = !!pendingPrompt;
-
-    this.restoreSidebarHistory();
-
-    // 2. Load History
-    this.loadActiveThread(() => {
-      // If we have a prompt from the service, use it
-      if (pendingPrompt) {
-        console.log('📝 Pre-filling input from Service:', pendingPrompt);
+    if (manager) {
+        // 2. Clone manager to be the new "Root"
+        const managerClone = { ...manager };
         
-        // A. Set Text (No Submit)
-        this.queryControl.setValue(pendingPrompt);
+        // 3. Setup peers (Your siblings)
+        managerClone.reports = (manager.reports || []).map(peer => {
+            if (peer.id === userId) {
+                // You: Collapsed initially
+                return { ...peer, expanded: false, hasChildren: peer.reports && peer.reports.length > 0 };
+            } else {
+                // Peer: Collapsed, children hidden to reduce noise
+                return { ...peer, expanded: false, reports: [], hasChildren: peer.reports && peer.reports.length > 0 };
+            }
+        });
 
-        // B. Focus Input
-        setTimeout(() => {
-          if (this.chatArea) this.chatArea.focusInput();
-        }, 100);
-      }
-    });
+        // 4. Expand manager so the list is visible
+        managerClone.expanded = true;
+        return [managerClone];
+    }
 
-    setTimeout(() => this.isInitializing.set(false), 1500);
-    this.startHelperRotation();
-    
-    // 3. Query Params Logic (Blocked if we found a Redirect Prompt)
-    this.route.queryParams.subscribe(params => {
-       // If we already handled a service redirect, IGNORE the URL
-       if (hasRedirect) return;
-
-       const incomingQuery = params['q'];
-       if (incomingQuery) {
-         console.log('🔗 Auto-submitting from URL');
-         this.queryControl.setValue(incomingQuery);
-         this.submitQuery();
-         this.router.navigate([], { queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true });
-       }
-    });
-  }
+    // Fallback if no manager (e.g., CEO)
+    const me = nodes.find(n => n.id === userId);
+    return me ? [{ ...me, expanded: false }] : [];
 }
+
