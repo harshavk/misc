@@ -1,82 +1,38 @@
-// in org-chart.service.ts
+<span class="badge doj-badge">
+                        <mat-icon>calendar_today</mat-icon> {{ employee.startDate | date:'mediumDate' }}
+                    </span>
 
-getInitialTree(viewMode: 'FULL_ORG' | 'MY_TEAM' = 'MY_TEAM'): Observable<EmployeeNode[]> {
-    const currentUserId = this.authService.getCurrentUserId();
+                    <span class="badge status-badge" [class.status-green]="(employee.progress || 0) > 0">
+                        {{ employee.status }}
+                    </span>
 
-    // ... (Mock Mode Logic) ...
-    // Inside the map() or subscribe():
-
-        this.rawDataCache = this.mapWorkdayResponse(data, currentUserId);
-
-        if (viewMode === 'MY_TEAM') {
-            // ✅ MODE 1: Show ONLY Manager + Direct Reports
-            return this.filterForTeamView(this.rawDataCache, currentUserId);
-        } else {
-            // ✅ MODE 2: Show WHOLE TREE (Start at CEO, auto-expand path to you)
-            return this.buildFullTreeWithFocus(this.rawDataCache);
-        }
+.badge.location-badge {
+    background: var(--bg-info);
+    color: var(--color-info);
+    border-color: transparent;
 }
 
-----------
-// in org-chart.service.ts
-
-// REPLACES 'pruneTreeForUser'
-private buildFullTreeWithFocus(nodes: EmployeeNode[]): EmployeeNode[] {
-    return nodes.map(node => {
-        // Check if the current user is somewhere inside this branch
-        const isUserInBranch = this.checkBranchForUser(node);
-
-        if (isUserInBranch) {
-            // ✅ EXPAND this node because the user is below it
-            return {
-                ...node,
-                expanded: true, 
-                // Recursively process children to keep the path open
-                reports: this.buildFullTreeWithFocus(node.reports || [])
-            };
-        } else {
-            // ✅ COLLAPSE this node, but KEEP data (don't set reports to [])
-            // This allows the user to click (+) and explore other teams
-            return {
-                ...node,
-                expanded: false,
-                // Ensure reports exist so the (+) icon appears
-                hasChildren: node.reports && node.reports.length > 0
-                // We do NOT recurse here to save performance; raw data is already there
-            };
-        }
-    });
+/* ✅ NEW: Date of Joining Badge (Light Purple) */
+.badge.doj-badge {
+    background: #f3e8ff;
+    /* Light Purple bg */
+    color: #9333ea;
+    /* Purple text */
+    border-color: transparent;
 }
 
-----------
-// in org-chart.service.ts
-
-private filterForTeamView(nodes: EmployeeNode[], userId: string): EmployeeNode[] {
-    // 1. Find your manager
-    const manager = this.findParentOfUser(nodes, userId);
-
-    if (manager) {
-        // 2. Clone manager to be the new "Root"
-        const managerClone = { ...manager };
-        
-        // 3. Setup peers (Your siblings)
-        managerClone.reports = (manager.reports || []).map(peer => {
-            if (peer.id === userId) {
-                // You: Collapsed initially
-                return { ...peer, expanded: false, hasChildren: peer.reports && peer.reports.length > 0 };
-            } else {
-                // Peer: Collapsed, children hidden to reduce noise
-                return { ...peer, expanded: false, reports: [], hasChildren: peer.reports && peer.reports.length > 0 };
-            }
-        });
-
-        // 4. Expand manager so the list is visible
-        managerClone.expanded = true;
-        return [managerClone];
-    }
-
-    // Fallback if no manager (e.g., CEO)
-    const me = nodes.find(n => n.id === userId);
-    return me ? [{ ...me, expanded: false }] : [];
+/* ✅ MISSING: Status Badge (Default Gray) */
+.badge.status-badge {
+    background: #f3f4f6;
+    /* Gray-100 */
+    color: #4b5563;
+    /* Gray-600 */
+    border-color: transparent;
+    text-transform: capitalize;
 }
 
+/* Status Green Override (Active) */
+.badge.status-green {
+    background: var(--bg-success);
+    color: var(--color-success);
+}
