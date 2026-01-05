@@ -1,38 +1,478 @@
-// ✅ FIX 1: Do not use a static string. Generate a unique session ID.
-readonly currentThreadId = signal<string>(`session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+import { ChangeDetectionStrategy, Component, inject, signal, computed, OnInit, OnDestroy, effect } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormControl, Validators, ReactiveFormsModule } from '@angular/forms';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { MatIconModule } from '@angular/material/icon';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { Router, ActivatedRoute } from '@angular/router';
 
-effect(() => {
-        const user = this.currentUser();
-        
-        // If user logs out or changes
-        if (user) {
-            // Generate a fresh thread ID for the new session
-            // OR restore the last active thread for THIS specific user from Sidebar history
-            this.restoreLastActiveThreadForUser(user.id);
-        }
+// Components
+import { ChatSidebarComponent } from './components/chat-sidebar/chat-sidebar';
+import { ChatAreaComponent } from './components/chat-area/chat-area';
+import { AuditPanelComponent } from './components/audit-panel/audit-panel';
+import { PromptLibraryDialogComponent } from './components/prompt-library-dialog/prompt-library-dialog';
+
+// Models & Services
+import { AiSearchService } from '../../core/services/ai-search.service';
+import { AuthService } from '../../core/services/auth.service';
+import { PromptService } from '../../core/services/prompt.service';
+import { ThreadMessage } from '../../core/models/ai-thread.models';
+import { ChatHistoryItem, AuditEntry, AiSearchResponse, ActionResult } from '../../core/models/ai-search.models';
+import { Role } from '../../core/models/role.enum';
+
+@Component({
+  selector: 'app-mybuddy',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    MatButtonToggleModule,
+    MatIconModule,
+    MatSnackBarModule,
+    MatDialogModule,
+    ChatSidebarComponent,
+    ChatAreaComponent,
+    AuditPanelComponent
+  ],
+  templateUrl: './mybuddy.html',
+  styleUrls: ['./mybuddy.css'],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class MyBuddy implements OnInit, OnDestroy {
+  private readonly ai = inject(AiSearchService);
+  private readonly promptService = inject(PromptService);
+  private readonly snackBar = inject(MatSnackBar);
+  private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private dialog = inject(MatDialog);
+
+  readonly currentUser = computed(() => this.auth.currentUser());
+
+  // --- LOADING STATE ---
+  readonly isInitializing = signal(true);
+  private readonly HTML_TAG_REGEX = /<\/?[a-z][\s\S]*>/i;
+
+  // Voice Variables
+  private recognition?: any;
+  private silenceTimer: any;
+  private typingTimer: any = null;
+
+  // --- STATE SIGNALS ---
+  readonly mobileView = signal<'history' | 'chat' | 'audit'>('chat');
+
+  readonly queryControl = new FormControl<string>('', {
+    nonNullable: true,
+    validators: [Validators.required, Validators.minLength(3)],
+  });
+
+  readonly isLoading = signal(false);
+  readonly error = signal<string | null>(null);
+  readonly isManager = computed(() =>
+    this.auth.currentUser()?.role.includes(Role.Manager) ?? false
+  );
+  readonly isAiTyping = signal(false);
+  readonly isListening = signal(false);
+
+  // Chat Data
+  readonly chatMessages = signal<ThreadMessage[]>([]);
+  
+  // ✅ FIX 1: Generate a unique ID initially, don't hardcode 'onboarding-session-1'
+  readonly currentThreadId = signal<string>(this.generateThreadId());
+  
+  readonly lastResponse = signal<AiSearchResponse | null>(null);
+  readonly chatHistory = signal<ChatHistoryItem[]>([]);
+  readonly auditLog = signal<AuditEntry[]>([]);
+
+  // Prompts Data
+  readonly prompts = this.promptService.library;
+  readonly isMockMode = this.ai.isMockMode();
+  readonly suggestedActions = computed<ActionResult[]>(() => this.lastResponse()?.actions ?? []);
+
+  // Hints
+  private helperIntervalId: any = null;
+  private readonly helperHints = [
+    '“Before first day” – checklist for a new hire',
+    '“Order laptop for new hire” – equipment guidance',
+    '“What is left for first 3 days?”',
+    '“Confirm Workday details for a new joiner”',
+  ];
+  readonly currentHelperIndex = signal(0);
+  readonly currentHelperHint = computed(() => this.helperHints[this.currentHelperIndex()] ?? '');
+
+  readonly inputStatus = computed(() => {
+    if (this.isListening()) return 'Listening... (Speak now)';
+    if (this.isLoading()) return 'Thinking about your last message…';
+    const roleLabel = this.isManager() ? 'manager' : 'employee';
+    return `Assistant ready for ${roleLabel} questions`;
+  });
+
+  constructor() {
+    // 1. Auto-save Messages
+    effect(() => {
+      const msgs = this.chatMessages();
+      const tid = this.currentThreadId();
+      // Only save if we actually have messages to save
+      if (msgs.length > 0) {
+        this.ai.saveHistory(tid, msgs).subscribe();
+      }
     });
 
+    // 2. Auto-save Sidebar (List of threads)
+    effect(() => {
+      const history = this.chatHistory();
+      const userId = this.currentUser()?.id;
+      // Only save if we have a valid user
+      if (userId && history.length > 0) {
+        localStorage.setItem(`wf_sidebar_${userId}`, JSON.stringify(history));
+      }
+    });
 
-// Helper to switch context cleanly
-private restoreLastActiveThreadForUser(userId: string) {
-    const rawSidebar = localStorage.getItem(`wf_sidebar_${userId}`);
-    if (rawSidebar) {
-        try {
-            const history = JSON.parse(rawSidebar);
-            if (history.length > 0) {
-                // Restore their last conversation
-                this.currentThreadId.set(history[0].id);
-            } else {
-                // No history, start fresh
-                this.currentThreadId.set(`thread-${Date.now()}`);
-            }
-        } catch {
-            this.currentThreadId.set(`thread-${Date.now()}`);
-        }
+    // ✅ FIX 2: Watch for User Changes (Role Switch)
+    effect(() => {
+      const user = this.currentUser();
+      
+      // Whenever the user changes (login/logout/role switch)
+      if (user) {
+        // Reset the view state
+        this.chatMessages.set([]);
+        this.lastResponse.set(null);
+        
+        // Restore Sidebar History for THIS specific user
+        this.restoreSidebarHistoryForUser(user.id);
+        
+        // Restore their last active thread OR start a fresh one
+        this.restoreLastActiveThreadForUser(user.id);
+      }
+    }, { allowSignalWrites: true });
+  }
+
+  ngOnInit(): void {
+    // Initial load handled by effect now, but we keep this for safety
+    setTimeout(() => {
+      this.isInitializing.set(false);
+    }, 1500);
+
+    this.startHelperRotation();
+
+    this.route.queryParams.subscribe(params => {
+      const incomingQuery = params['q'];
+      if (incomingQuery) {
+        this.queryControl.setValue(incomingQuery);
+        this.submitQuery();
+        this.router.navigate([], { queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      }
+    });
+  }
+
+  // --- HISTORY MANAGEMENT ---
+
+  // ✅ FIX 3: Dynamic Restoration based on ID
+  private restoreSidebarHistoryForUser(userId: string) {
+    const raw = localStorage.getItem(`wf_sidebar_${userId}`);
+    if (raw) {
+      try {
+        const history = JSON.parse(raw);
+        this.chatHistory.set(history);
+      } catch { 
+        this.chatHistory.set([]);
+      }
     } else {
-        this.currentThreadId.set(`thread-${Date.now()}`);
+      this.chatHistory.set([]);
+    }
+  }
+
+  // ✅ FIX 4: Logic to pick up where they left off
+  private restoreLastActiveThreadForUser(userId: string) {
+    const history = this.chatHistory();
+    
+    if (history.length > 0) {
+      // Pick the most recent thread
+      const lastThreadId = history[0].id;
+      this.currentThreadId.set(lastThreadId);
+      this.loadActiveThread();
+    } else {
+      // No history? Start fresh unique thread
+      this.startNewChat();
+    }
+  }
+
+  private loadActiveThread() {
+    this.isLoading.set(true);
+    this.ai.loadHistory(this.currentThreadId()).subscribe({
+      next: (msgs) => {
+        this.chatMessages.set(msgs);
+        this.isLoading.set(false);
+      },
+      error: () => {
+        this.chatMessages.set([]);
+        this.isLoading.set(false);
+      }
+    });
+  }
+
+  private generateThreadId(): string {
+    return `thread-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  }
+
+  // --- MAIN ACTIONS ---
+  startNewChat(): void {
+    const newId = this.generateThreadId();
+    this.currentThreadId.set(newId);
+    this.chatMessages.set([]);
+    this.lastResponse.set(null);
+    this.error.set(null);
+    this.isAiTyping.set(false);
+    this.queryControl.setValue('');
+    if (window.innerWidth <= 1000) this.mobileView.set('chat');
+  }
+
+  clearHistory(): void {
+    // 1. Clear State
+    this.chatHistory.set([]);
+    this.chatMessages.set([]);
+    this.lastResponse.set(null);
+    this.auditLog.set([]);
+    
+    // 2. Clear Storage
+    const userId = this.currentUser()?.id;
+    if (userId) {
+        localStorage.removeItem(`wf_sidebar_${userId}`);
+        // Optionally clear specific thread keys if you track them
+    }
+    
+    // 3. Reset
+    this.startNewChat();
+    this.snackBar.open('All history cleared for this user', 'OK', { duration: 2000 });
+  }
+
+  reuseHistoryItem(item: ChatHistoryItem): void {
+    this.currentThreadId.set(item.id);
+    this.error.set(null);
+    this.isAiTyping.set(false);
+    this.loadActiveThread();
+    this.queryControl.setValue(item.query || '');
+    if (window.innerWidth <= 1000) this.mobileView.set('chat');
+  }
+
+  removeThread(threadId: string): void {
+    this.chatHistory.update((items) => items.filter((i) => i.id !== threadId));
+    this.ai.clearHistory(threadId).subscribe();
+    if (this.currentThreadId() === threadId) this.startNewChat();
+    this.snackBar.open('Conversation removed', 'OK', { duration: 1800 });
+  }
+
+  // --- QUERY LOGIC (Unchanged Logic) ---
+  
+  handlePromptSelection(promptContent: string): void {
+    this.queryControl.setValue(promptContent);
+  }
+
+  openPromptLibrary() {
+    const dialogRef = this.dialog.open(PromptLibraryDialogComponent, {
+      width: '900px',
+      height: '80vh',
+      maxWidth: '95vw',
+      panelClass: 'modern-dialog-panel',
+      autoFocus: false
+    });
+
+    dialogRef.afterClosed().subscribe((selectedPromptText: string | undefined) => {
+      if (selectedPromptText) {
+        this.queryControl.setValue(selectedPromptText);
+        this.queryControl.updateValueAndValidity();
+      }
+    });
+  }
+
+  submitQuery(): void {
+    this.error.set(null);
+    if (this.queryControl.invalid) {
+      this.queryControl.markAsTouched();
+      this.error.set('Please enter at least 3 characters.');
+      return;
+    }
+    const query = this.queryControl.value.trim();
+    if (!query) return;
+
+    const userMsg: ThreadMessage = this.withLocalTimestamp({ type: 'human', content: query, tool_call: null });
+    this.chatMessages.update((list) => [...list, userMsg]);
+
+    this.isLoading.set(true);
+    this.isAiTyping.set(true);
+    this.queryControl.setValue('');
+
+    this.ai.search(query, this.currentThreadId(), { workflow: 'onboarding' }, this.currentUser()?.id)
+      .subscribe({
+        next: (res) => this.handleSearchSuccess(query, res),
+        error: (err) => this.handleSearchError(err),
+      });
+  }
+
+  private handleSearchSuccess(query: string, res: AiSearchResponse): void {
+    this.isLoading.set(false);
+    const threadId = res.threadId;
+
+    const fromApi = (res.historyMessages || [])
+      .filter((m) => (m.type === 'human' || m.type === 'ai') && m.content !== '')
+      .map((m) => this.withLocalTimestamp(m));
+
+    setTimeout(() => {
+      this.lastResponse.set(res);
+      this.currentThreadId.set(threadId);
+
+      const lastAiIndex = [...fromApi].map((m, i) => ({ m, i })).reverse().find((x) => x.m.type === 'ai')?.i;
+
+      if (lastAiIndex == null) {
+        this.chatMessages.set(fromApi);
+        this.isAiTyping.set(false);
+      } else {
+        const base = fromApi.slice(0, lastAiIndex);
+        const lastAi = fromApi[lastAiIndex];
+        this.isAiTyping.set(false);
+        this.startTypingEffect(lastAi, base);
+      }
+
+      const msgCount = fromApi.length;
+      const lastMsgPreview = res.answers?.[0]?.content ?? '';
+      const preview = lastMsgPreview.length > 80 ? lastMsgPreview.slice(0, 80) + '…' : lastMsgPreview;
+      const nowIso = new Date().toISOString();
+
+      this.chatHistory.update((items) => {
+        const others = items.filter((i) => i.id !== threadId);
+        return [{ id: threadId, query: res.query, createdAt: nowIso, messagesCount: msgCount, lastPreview: preview, activityHint: 'Active' }, ...others];
+      });
+    }, 100);
+  }
+
+  private handleSearchError(err: any): void {
+    this.isLoading.set(false);
+    this.isAiTyping.set(false);
+    this.error.set(err?.message || 'Error calling AI');
+    this.snackBar.open(this.error()!, 'Dismiss', { duration: 4000 });
+  }
+
+  // --- BOILERPLATE Helpers ---
+  setMobileView(view: 'history' | 'chat' | 'audit'): void {
+    this.mobileView.set(view);
+  }
+
+  handleToolkitAction(actionQuery: string): void {
+    this.queryControl.setValue(actionQuery);
+    if (window.innerWidth <= 1000) this.mobileView.set('chat');
+    this.submitQuery();
+  }
+
+  onContentLinkClick(msg: ThreadMessage, event: MouseEvent): void {
+    const target = event.target as HTMLElement | null;
+    const anchor = target?.closest('a') as HTMLAnchorElement | null;
+    if (anchor) {
+      const entry: AuditEntry = { text: `✓ Opened: "${anchor.textContent}"`, href: anchor.href };
+      this.auditLog.update((list) => [entry, ...list]);
+    }
+  }
+
+  onToolPayloadClick(msg: ThreadMessage, tool: any, event: MouseEvent): void {
+    const entry: AuditEntry = { text: `✓ Action: ${tool?.name}`, href: '#' };
+    this.auditLog.update((list) => [entry, ...list]);
+  }
+
+  exportConversation() {
+    this.snackBar.open('Export triggered', 'OK');
+  }
+
+  handleMessageFeedback(event: { index: number, type: 'like' | 'dislike' | null }) {
+    this.chatMessages.update(msgs => {
+      const newMsgs = [...msgs];
+      newMsgs[event.index] = { ...newMsgs[event.index], feedback: event.type };
+      return newMsgs;
+    });
+  }
+
+  private startTypingEffect(aiMessage: ThreadMessage, baseMessages: ThreadMessage[]): void {
+    const fullText = aiMessage.content || '';
+    if (this.HTML_TAG_REGEX.test(fullText) || aiMessage.tool_call) {
+      this.chatMessages.set([...baseMessages, aiMessage]);
+      return;
     }
 
-    // Now reload the messages for this specific thread + user combo
-    this.loadActiveThread();
+    let index = 0;
+    const workingMsg = { ...aiMessage, content: '' };
+    this.chatMessages.set([...baseMessages, workingMsg]);
+    if (this.typingTimer) clearInterval(this.typingTimer);
+
+    this.typingTimer = setInterval(() => {
+      index++;
+      const updated = { ...workingMsg, content: fullText.slice(0, index) };
+      this.chatMessages.update((list) => {
+        const next = [...list];
+        next[next.length - 1] = updated;
+        return next;
+      });
+      if (index >= fullText.length) {
+        clearInterval(this.typingTimer);
+        this.typingTimer = null;
+        this.isAiTyping.set(false);
+      }
+    }, 20);
+  }
+
+  private withLocalTimestamp(msg: ThreadMessage): ThreadMessage {
+    return { ...msg, localTimestamp: new Date().toISOString() };
+  }
+
+  toggleMic(): void {
+    this.initVoice();
+    if (!this.recognition) return;
+    if (this.isListening()) this.stopVoice();
+    else {
+      this.queryControl.setValue('');
+      this.isListening.set(true);
+      this.recognition.start();
+    }
+  }
+
+  private stopVoice() {
+    if (this.recognition) this.recognition.stop();
+    this.isListening.set(false);
+    clearTimeout(this.silenceTimer);
+  }
+
+  private initVoice(): void {
+    if (this.recognition) return;
+    const Speech = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!Speech) return;
+    this.recognition = new Speech();
+    this.recognition.lang = 'en-US';
+    this.recognition.interimResults = true;
+    this.recognition.continuous = true;
+    this.recognition.onresult = (e: any) => {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = setTimeout(() => {
+        this.stopVoice();
+        if (this.queryControl.value.length > 3) this.submitQuery();
+      }, 1000);
+      let t = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) t += e.results[i][0].transcript;
+      this.queryControl.setValue(t.trim());
+    };
+    this.recognition.onerror = () => this.stopVoice();
+    this.recognition.onend = () => this.stopVoice();
+  }
+
+  private startHelperRotation() {
+    if (this.helperIntervalId) clearInterval(this.helperIntervalId);
+    this.helperIntervalId = setInterval(() => {
+      if (this.queryControl.value) return; 
+      this.currentHelperIndex.update(i => (i + 1) % this.helperHints.length);
+    }, 5000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.typingTimer) clearInterval(this.typingTimer);
+    if (this.helperIntervalId) clearInterval(this.helperIntervalId);
+    if (this.recognition) try { this.recognition.stop(); } catch { }
+    clearTimeout(this.silenceTimer);
+  }
 }
