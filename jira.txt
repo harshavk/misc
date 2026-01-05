@@ -1,40 +1,37 @@
-// Inside MyBuddy class
-
-  startNewChat(): void {
-    // 1. Generate a TRULY unique ID
-    const newId = this.generateThreadId();
-    console.log('Starting New Chat with ID:', newId); // Debug check
-
-    // 2. Update the Thread ID Signal
-    this.currentThreadId.set(newId);
-
-    // 3. FORCE CLEAR the messages and responses
-    this.chatMessages.set([]); 
-    this.lastResponse.set(null);
-    this.error.set(null);
-
-    // 4. Reset UI Inputs
-    this.isAiTyping.set(false);
-    this.queryControl.setValue('');
-    
-    // 5. Switch view if mobile
-    if (window.innerWidth <= 1000) this.mobileView.set('chat');
-  }
-
-  // ✅ Helper to ensure unique IDs (Prevent collisions)
-  private generateThreadId(): string {
-    return `thread-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-  }
-
-
-effect(() => {
-      const user = this.currentUser();
-      
-      // We check 'untracked' to prevent infinite loops if we modify signals inside
-      if (user) {
-        // Reset local state for the new user
-        this.chatMessages.set([]);
-        this.restoreSidebarHistoryForUser(user.id);
-        this.restoreLastActiveThreadForUser(user.id);
+// 1. Auto-save Messages (Keep as is)
+    effect(() => {
+      const msgs = this.chatMessages();
+      const tid = this.currentThreadId();
+      if (msgs.length > 0) {
+        this.ai.saveHistory(tid, msgs).subscribe();
       }
+    });
+
+    // 2. Auto-save Sidebar (Keep as is)
+    effect(() => {
+      const history = this.chatHistory();
+      const userId = this.currentUser()?.id;
+      if (userId && history.length > 0) {
+        localStorage.setItem(`wf_sidebar_${userId}`, JSON.stringify(history));
+      }
+    });
+
+    // ✅ FIX 3: WATCH USER CHANGES ONLY
+    effect(() => {
+      // 1. We read the signal we WANT to track
+      const user = this.currentUser();
+
+      // 2. We wrap everything else in untracked() 
+      // This prevents the effect from running when chatHistory changes
+      untracked(() => {
+        if (user) {
+          // Reset view
+          this.chatMessages.set([]);
+          this.lastResponse.set(null);
+          
+          // Restore state for the new user
+          this.restoreSidebarHistoryForUser(user.id);
+          this.restoreLastActiveThreadForUser(user.id);
+        }
+      });
     }, { allowSignalWrites: true });
