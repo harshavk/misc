@@ -1,55 +1,44 @@
-🧩 Story 1: Webhook API to Receive Order Create/Update Events (DB + .NET 8)
+@if (currentUser) {
+        <div class="actions-group">
 
-User Story
+            <button mat-icon-button (click)="toggleTheme()" class="toolbar-icon">
+                <mat-icon>{{ themeService.isDarkMode() ? 'light_mode' : 'dark_mode' }}</mat-icon>
+            </button>
 
-As a Wells Fargo downstream system
-I want to expose a secure webhook API to receive order creation and order update events from the Cisive system
-So that order data is reliably persisted in the Wells database and can be used for internal processing, tracking, and reporting.
+            <div class="user-pill static">
+                <span class="user-name">{{ currentUser.name }}</span>
+                <div class="avatar-circle">
+                    @if (currentUser.image) {
+                    <img [src]="currentUser.image" alt="User" class="avatar-img">
+                    } @else {
+                    <span>{{ currentUser.name.charAt(0) }}</span>
+                    }
+                </div>
+            </div>
 
-⸻
+            <button mat-icon-button (click)="onLogout()" matTooltip="Logout" class="logout-btn">
+                <mat-icon>logout</mat-icon>
+            </button>
 
-Business Context
-	•	Cisive will notify Wells via webhook whenever:
-	•	A new order is created
-	•	An existing order is updated
-	•	Wells must:
-	•	Validate the incoming payload
-	•	Store the data in a structured, auditable format
-	•	Handle retries and duplicate events safely
+        </div>
+        }
 
-⸻
+/* Remove pointer cursor and hover bg since it's just a display now */
+.user-pill.static {
+    cursor: default;
+    background-color: transparent; /* Or keep a light bg if you prefer */
+}
 
-Acceptance Criteria
-	1.	Webhook endpoint supports OrderCreated and OrderUpdated events.
-	2.	Endpoint is implemented using .NET 8 Web API.
-	3.	Incoming payload is validated (schema + required fields).
-	4.	Orders are inserted or updated in Wells database based on external order ID.
-	5.	Webhook processing is idempotent (duplicate events do not create duplicate records).
-	6.	All requests and responses are logged with correlation IDs.
-	7.	Errors are handled gracefully and return appropriate HTTP status codes.
-	8.	Audit fields (CreatedBy, CreatedOn, UpdatedOn, SourceSystem) are populated.
-	9.	Webhook endpoint is secured (authentication/authorization enforced).
-	10.	API returns:
-	•	200 OK for successful processing
-	•	400 Bad Request for validation errors
-	•	401/403 for auth failures
-	•	500 for unexpected errors
+.user-pill.static:hover {
+    background-color: transparent;
+}
 
-⸻
-
-Technical Tasks
-
-API / Code
-	•	Create webhook controller (POST /api/webhooks/cisive/orders)
-	•	Define request DTOs for order payload
-	•	Implement validation logic
-	•	Implement idempotency check using external order ID + event type
-	•	Implement service layer for order upsert
-	•	Add structured logging and exception handling
-	•	Add unit tests and integration tests
-
-Database
-	•	Create Orders table (or extend existing)
-	•	Create OrderWebhookEvents table for audit/idempotency
-	•	Add indexes on external order ID and event type
-	•	Add schema versioning/migration scripts
+/* Optional: Style the new logout button specifically if needed */
+.logout-btn {
+    color: var(--text-muted); /* Or your brand red color */
+    margin-left: 8px;
+}
+.logout-btn:hover {
+    color: #dc2626; /* Red on hover */
+    background: rgba(220, 38, 38, 0.1);
+}
