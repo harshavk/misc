@@ -1,44 +1,95 @@
-@if (currentUser) {
-        <div class="actions-group">
+CREATE TABLE ValidationJob
+(
+    ValidationJobId        BIGINT IDENTITY(1,1) NOT NULL,
+    JobReference           UNIQUEIDENTIFIER     NOT NULL,
 
-            <button mat-icon-button (click)="toggleTheme()" class="toolbar-icon">
-                <mat-icon>{{ themeService.isDarkMode() ? 'light_mode' : 'dark_mode' }}</mat-icon>
-            </button>
+    ControlFileName        NVARCHAR(260)         NOT NULL,
+    SourcePath             NVARCHAR(1024)        NOT NULL,
 
-            <div class="user-pill static">
-                <span class="user-name">{{ currentUser.name }}</span>
-                <div class="avatar-circle">
-                    @if (currentUser.image) {
-                    <img [src]="currentUser.image" alt="User" class="avatar-img">
-                    } @else {
-                    <span>{{ currentUser.name.charAt(0) }}</span>
-                    }
-                </div>
-            </div>
+    TotalRowCount          INT                  NOT NULL DEFAULT 0,
+    ProcessedRowCount      INT                  NOT NULL DEFAULT 0,
+    FailedRowCount         INT                  NOT NULL DEFAULT 0,
 
-            <button mat-icon-button (click)="onLogout()" matTooltip="Logout" class="logout-btn">
-                <mat-icon>logout</mat-icon>
-            </button>
+    JobStatus              TINYINT              NOT NULL,
+    -- 1 = Queued
+    -- 2 = Running
+    -- 3 = Completed
+    -- 4 = Failed (system failure, not data failure)
 
-        </div>
-        }
+    StartedOnUtc           DATETIME2(3)          NULL,
+    CompletedOnUtc         DATETIME2(3)          NULL,
 
-/* Remove pointer cursor and hover bg since it's just a display now */
-.user-pill.static {
-    cursor: default;
-    background-color: transparent; /* Or keep a light bg if you prefer */
+    CreatedOnUtc           DATETIME2(3)          NOT NULL,
+    CreatedBy              NVARCHAR(100)         NOT NULL,
+
+    CONSTRAINT PK_ValidationJob 
+        PRIMARY KEY CLUSTERED (ValidationJobId),
+
+    CONSTRAINT UQ_ValidationJob_JobReference
+        UNIQUE (JobReference)
+);
+
+CREATE NONCLUSTERED INDEX IX_ValidationJob_Status
+ON ValidationJob (JobStatus);
+
+CREATE NONCLUSTERED INDEX IX_ValidationJob_CreatedOn
+ON ValidationJob (CreatedOnUtc DESC);
+
+
+CREATE TABLE ValidationFailure
+(
+    ValidationFailureId    BIGINT IDENTITY(1,1) NOT NULL,
+    ValidationJobId        BIGINT               NOT NULL,
+
+    RowNumber              INT                  NOT NULL,
+
+    EmployeeId             NVARCHAR(50)         NULL,
+    SSN                    NVARCHAR(50)         NULL,
+    FileName               NVARCHAR(260)        NOT NULL,
+
+    ErrorCode              NVARCHAR(50)         NOT NULL,
+    ErrorMessage           NVARCHAR(1000)       NOT NULL,
+
+    CreatedOnUtc           DATETIME2(3)         NOT NULL,
+
+    CONSTRAINT PK_ValidationFailure 
+        PRIMARY KEY CLUSTERED (ValidationFailureId),
+
+    CONSTRAINT FK_ValidationFailure_ValidationJob
+        FOREIGN KEY (ValidationJobId)
+        REFERENCES ValidationJob (ValidationJobId)
+        ON DELETE CASCADE
+);
+
+CREATE NONCLUSTERED INDEX IX_ValidationFailure_Job_Row
+ON ValidationFailure (ValidationJobId, RowNumber);
+
+CREATE NONCLUSTERED INDEX IX_ValidationFailure_Job_ErrorCode
+ON ValidationFailure (ValidationJobId, ErrorCode);
+
+CREATE NONCLUSTERED INDEX IX_ValidationFailure_Job_FileName
+ON ValidationFailure (ValidationJobId, FileName);
+
+
+| ErrorCode          | Meaning               |
+| ------------------ | --------------------- |
+| FILE_NOT_FOUND     | File missing in path  |
+| INVALID_MIME       | Disallowed MIME       |
+| EMPLOYEE_NOT_FOUND | Employee ID invalid   |
+| SSN_REQUIRED       | SSN missing           |
+| INVALID_COUNTRY    | Country lookup failed |
+| BARCODE_INACTIVE   | Barcode inactive      |
+
+
+Domain / Common
+public enum ValidationJobStatus
+{
+    Queued = 1,
+    Running = 2,
+    Completed = 3,
+    Failed = 4
 }
 
-.user-pill.static:hover {
-    background-color: transparent;
-}
 
-/* Optional: Style the new logout button specifically if needed */
-.logout-btn {
-    color: var(--text-muted); /* Or your brand red color */
-    margin-left: 8px;
-}
-.logout-btn:hover {
-    color: #dc2626; /* Red on hover */
-    background: rgba(220, 38, 38, 0.1);
-}
+
+
