@@ -49,3 +49,23 @@ public static List<FadvAccountConfig> LoadFadvAccountConfigs(
 
     return allConfigs;
 }
+private static void ValidateAccountConfigs(
+    IReadOnlyCollection<FadvAccountConfig> configs)
+{
+    var duplicates =
+        configs
+            .GroupBy(c => new { c.FolderName, c.IsRegulated })
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+    if (duplicates.Any())
+    {
+        throw new InvalidOperationException(
+            "Duplicate account configuration found for same FolderName and IsRegulated.");
+    }
+
+    if (configs.Any(c => string.IsNullOrWhiteSpace(c.FolderName)))
+    {
+        throw new InvalidOperationException("FolderName cannot be empty.");
+    }
+}
