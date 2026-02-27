@@ -1,62 +1,51 @@
 using System.Text.Json;
 
-public static Dictionary<string, FadvAccountConfig> LoadFadvAccountConfig(
+public static Dictionary<string, List<FadvAccountConfig>> LoadFadvAccountConfig(
     IReadOnlyCollection<(string ConfigName, string ConfigValue)> appConfigs)
 {
-    if (appConfigs == null || appConfigs.Count == 0)
-    {
-        throw new InvalidOperationException("No AppConfig entries found.");
-    }
-
-    var accountConfigs =
+    var accountConfigParts =
         appConfigs
             .Where(c => c.ConfigName.StartsWith(
                 "FADV.AccountConfig.Part",
                 StringComparison.OrdinalIgnoreCase))
-            .OrderBy(c => c.ConfigName) // Part01, Part02, ...
+            .OrderBy(c => c.ConfigName)
             .ToList();
 
-    if (accountConfigs.Count == 0)
+    if (accountConfigParts.Count == 0)
     {
         throw new InvalidOperationException("No FADV.AccountConfig.Part entries found.");
     }
 
     var mergedAccounts =
-        new Dictionary<string, FadvAccountConfig>(StringComparer.OrdinalIgnoreCase);
+        new Dictionary<string, List<FadvAccountConfig>>(StringComparer.OrdinalIgnoreCase);
 
     var jsonOptions = new JsonSerializerOptions
     {
         PropertyNameCaseInsensitive = true
     };
 
-    foreach (var config in accountConfigs)
+    foreach (var part in accountConfigParts)
     {
-        if (string.IsNullOrWhiteSpace(config.ConfigValue))
-        {
-            throw new InvalidOperationException(
-                $"Config '{config.ConfigName}' has empty value.");
-        }
-
         FadvAccountConfigRoot? parsed =
             JsonSerializer.Deserialize<FadvAccountConfigRoot>(
-                config.ConfigValue,
+                part.ConfigValue,
                 jsonOptions);
 
         if (parsed == null || parsed.Accounts.Count == 0)
         {
             throw new InvalidOperationException(
-                $"Config '{config.ConfigName}' contains no accounts.");
+                $"Config '{part.ConfigName}' contains no accounts.");
         }
 
-        foreach (var kvp in parsed.Accounts)
+        foreach (var accountEntry in parsed.Accounts)
         {
-            if (mergedAccounts.ContainsKey(kvp.Key))
+            if (!mergedAccounts.TryGetValue(accountEntry.Key, out var list))
             {
-                throw new InvalidOperationException(
-                    $"Duplicate AccountId '{kvp.Key}' found in '{config.ConfigName}'.");
+                list = new List<FadvAccountConfig>();
+                mergedAccounts[accountEntry.Key] = list;
             }
 
-            mergedAccounts.Add(kvp.Key, kvp.Value);
+            list.AddRange(accountEntry.Value);
         }
     }
 
