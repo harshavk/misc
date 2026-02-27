@@ -1,56 +1,41 @@
-CREATE TABLE dbo.DocumentBacklog
-(
-    BacklogId           BIGINT IDENTITY(1,1) NOT NULL,
-
-    -- Identity & Scope
-    AccountId           VARCHAR(50)  NOT NULL,
-    [Year]              INT          NOT NULL,
-    Quarter             VARCHAR(20)  NOT NULL,
-    RowBusinessKey      VARCHAR(200) NOT NULL,
-
-    -- Source Reference (HTML)
-    SourceHtmlPath      NVARCHAR(1000) NOT NULL,
-
-    -- Payload (NO SSN)
-    PayloadJson         NVARCHAR(MAX) NOT NULL,
-
-    -- Dispatch Link
-    DocumentImportId    BIGINT NULL,
-
-    -- Processing Control
-    [Status]            VARCHAR(20) NOT NULL,
-    RetryCount          INT NOT NULL CONSTRAINT DF_DocumentBacklog_RetryCount DEFAULT (0),
-    LastAttemptAt       DATETIME2 NULL,
-    ErrorMessage        NVARCHAR(1000) NULL,
-
-    -- Audit
-    CreatedAt           DATETIME2 NOT NULL CONSTRAINT DF_DocumentBacklog_CreatedAt DEFAULT (SYSUTCDATETIME()),
-    UpdatedAt           DATETIME2 NOT NULL CONSTRAINT DF_DocumentBacklog_UpdatedAt DEFAULT (SYSUTCDATETIME()),
-    CreatedBy           VARCHAR(100) NOT NULL,
-
-    CONSTRAINT PK_DocumentBacklog PRIMARY KEY CLUSTERED (BacklogId)
-);
-
-
-CREATE UNIQUE INDEX UX_DocumentBacklog_BusinessKey
-ON dbo.DocumentBacklog (AccountId, [Year], Quarter, RowBusinessKey);
-
-CREATE INDEX IX_DocumentBacklog_Status
-ON dbo.DocumentBacklog ([Status], CreatedAt)
-INCLUDE (AccountId, [Year], Quarter, RetryCount);
-
-ALTER TABLE dbo.DocumentBacklog
-ADD CONSTRAINT FK_DocumentBacklog_DocumentImports
-FOREIGN KEY (DocumentImportId)
-REFERENCES dbo.DocumentImports (DocumentImportId);
-
-ProcessingScope
-
+public sealed class ProcessingScopeConfig
 {
-  "rootPath": "path",
-  "exclude": {
-    "quarters": [
-      { "year": 2024, "quarter": "2024_03" }
-    ]
-  }
+    public string RootPath { get; set; } = string.Empty;
+    public ExcludeScopeConfig? Exclude { get; set; }
+}
+
+public sealed class ExcludeScopeConfig
+{
+    public List<ExcludedQuarter>? Quarters { get; set; }
+}
+
+public sealed class ExcludedQuarter
+{
+    public int Year { get; set; }
+    public string Quarter { get; set; } = string.Empty;
+}
+
+using System.Text.Json;
+
+public static ProcessingScopeConfig DeserializeProcessingScope(string json)
+{
+    if (string.IsNullOrWhiteSpace(json))
+    {
+        throw new InvalidOperationException("ProcessingScope config value is empty.");
+    }
+
+    var options = new JsonSerializerOptions
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    ProcessingScopeConfig? config =
+        JsonSerializer.Deserialize<ProcessingScopeConfig>(json, options);
+
+    if (config == null || string.IsNullOrWhiteSpace(config.RootPath))
+    {
+        throw new InvalidOperationException("Invalid ProcessingScope configuration.");
+    }
+
+    return config;
 }
