@@ -1,41 +1,64 @@
-public sealed class ProcessingScopeConfig
-{
-    public string RootPath { get; set; } = string.Empty;
-    public ExcludeScopeConfig? Exclude { get; set; }
-}
-
-public sealed class ExcludeScopeConfig
-{
-    public List<ExcludedQuarter>? Quarters { get; set; }
-}
-
-public sealed class ExcludedQuarter
-{
-    public int Year { get; set; }
-    public string Quarter { get; set; } = string.Empty;
-}
-
 using System.Text.Json;
 
-public static ProcessingScopeConfig DeserializeProcessingScope(string json)
+public static Dictionary<string, FadvAccountConfig> LoadFadvAccountConfig(
+    IReadOnlyCollection<(string ConfigName, string ConfigValue)> appConfigs)
 {
-    if (string.IsNullOrWhiteSpace(json))
+    if (appConfigs == null || appConfigs.Count == 0)
     {
-        throw new InvalidOperationException("ProcessingScope config value is empty.");
+        throw new InvalidOperationException("No AppConfig entries found.");
     }
 
-    var options = new JsonSerializerOptions
+    var accountConfigs =
+        appConfigs
+            .Where(c => c.ConfigName.StartsWith(
+                "FADV.AccountConfig.Part",
+                StringComparison.OrdinalIgnoreCase))
+            .OrderBy(c => c.ConfigName) // Part01, Part02, ...
+            .ToList();
+
+    if (accountConfigs.Count == 0)
+    {
+        throw new InvalidOperationException("No FADV.AccountConfig.Part entries found.");
+    }
+
+    var mergedAccounts =
+        new Dictionary<string, FadvAccountConfig>(StringComparer.OrdinalIgnoreCase);
+
+    var jsonOptions = new JsonSerializerOptions
     {
         PropertyNameCaseInsensitive = true
     };
 
-    ProcessingScopeConfig? config =
-        JsonSerializer.Deserialize<ProcessingScopeConfig>(json, options);
-
-    if (config == null || string.IsNullOrWhiteSpace(config.RootPath))
+    foreach (var config in accountConfigs)
     {
-        throw new InvalidOperationException("Invalid ProcessingScope configuration.");
+        if (string.IsNullOrWhiteSpace(config.ConfigValue))
+        {
+            throw new InvalidOperationException(
+                $"Config '{config.ConfigName}' has empty value.");
+        }
+
+        FadvAccountConfigRoot? parsed =
+            JsonSerializer.Deserialize<FadvAccountConfigRoot>(
+                config.ConfigValue,
+                jsonOptions);
+
+        if (parsed == null || parsed.Accounts.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Config '{config.ConfigName}' contains no accounts.");
+        }
+
+        foreach (var kvp in parsed.Accounts)
+        {
+            if (mergedAccounts.ContainsKey(kvp.Key))
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate AccountId '{kvp.Key}' found in '{config.ConfigName}'.");
+            }
+
+            mergedAccounts.Add(kvp.Key, kvp.Value);
+        }
     }
 
-    return config;
+    return mergedAccounts;
 }
