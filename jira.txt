@@ -1,9 +1,9 @@
 using System.Text.Json;
 
-public static Dictionary<string, List<FadvAccountConfig>> LoadFadvAccountConfig(
+public static List<FadvAccountConfig> LoadFadvAccountConfigs(
     IReadOnlyCollection<(string ConfigName, string ConfigValue)> appConfigs)
 {
-    var accountConfigParts =
+    var parts =
         appConfigs
             .Where(c => c.ConfigName.StartsWith(
                 "FADV.AccountConfig.Part",
@@ -11,21 +11,26 @@ public static Dictionary<string, List<FadvAccountConfig>> LoadFadvAccountConfig(
             .OrderBy(c => c.ConfigName)
             .ToList();
 
-    if (accountConfigParts.Count == 0)
+    if (parts.Count == 0)
     {
         throw new InvalidOperationException("No FADV.AccountConfig.Part entries found.");
     }
 
-    var mergedAccounts =
-        new Dictionary<string, List<FadvAccountConfig>>(StringComparer.OrdinalIgnoreCase);
+    var allConfigs = new List<FadvAccountConfig>();
 
     var jsonOptions = new JsonSerializerOptions
     {
         PropertyNameCaseInsensitive = true
     };
 
-    foreach (var part in accountConfigParts)
+    foreach (var part in parts)
     {
+        if (string.IsNullOrWhiteSpace(part.ConfigValue))
+        {
+            throw new InvalidOperationException(
+                $"Config '{part.ConfigName}' is empty.");
+        }
+
         FadvAccountConfigRoot? parsed =
             JsonSerializer.Deserialize<FadvAccountConfigRoot>(
                 part.ConfigValue,
@@ -37,17 +42,10 @@ public static Dictionary<string, List<FadvAccountConfig>> LoadFadvAccountConfig(
                 $"Config '{part.ConfigName}' contains no accounts.");
         }
 
-        foreach (var accountEntry in parsed.Accounts)
-        {
-            if (!mergedAccounts.TryGetValue(accountEntry.Key, out var list))
-            {
-                list = new List<FadvAccountConfig>();
-                mergedAccounts[accountEntry.Key] = list;
-            }
-
-            list.AddRange(accountEntry.Value);
-        }
+        allConfigs.AddRange(parsed.Accounts);
     }
 
-    return mergedAccounts;
+    ValidateAccountConfigs(allConfigs);
+
+    return allConfigs;
 }
