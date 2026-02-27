@@ -44,3 +44,12 @@ ADD CONSTRAINT FK_DocumentBacklog_DocumentImports
 FOREIGN KEY (DocumentImportId)
 REFERENCES dbo.DocumentImports (DocumentImportId);
 
+ProcessingScope
+
+{
+  "defaultEnabled": true,
+  "excluded": [
+    { "year": 2024, "quarter": "2024_03", "reason": "Legal hold" },
+    { "year": 2023, "quarter": "2023_04", "reason": "Data correction" }
+  ]
+}
