@@ -47,9 +47,13 @@ REFERENCES dbo.DocumentImports (DocumentImportId);
 ProcessingScope
 
 {
+  "rootPath": "\\\\cpvwa01a0417\\Migrations\\FirstAdvantage Ongoing",
   "defaultEnabled": true,
-  "excluded": [
-    { "year": 2024, "quarter": "2024_03", "reason": "Legal hold" },
-    { "year": 2023, "quarter": "2023_04", "reason": "Data correction" }
-  ]
+  "exclude": {
+    "years": [2022],
+    "quarters": [
+      { "year": 2024, "quarter": "2024_03" },
+      { "year": 2023, "quarter": "2023_04" }
+    ]
+  }
 }
