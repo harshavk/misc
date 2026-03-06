@@ -69,3 +69,63 @@ private static void ValidateAccountConfigs(
         throw new InvalidOperationException("FolderName cannot be empty.");
     }
 }
+
+
+
+Act as a senior .NET architect and review the currently opened C# file.
+
+Your task is to analyze and refactor the code following enterprise-grade standards used in large production systems.
+
+Follow these rules strictly:
+
+1. Code Quality
+- Apply SOLID principles.
+- Follow Clean Architecture practices.
+- Break large methods into small focused methods.
+- Ensure methods have a single responsibility.
+
+2. Exception Handling
+- Avoid throwing exceptions for business flow.
+- Catch exceptions where appropriate.
+- Log errors using ILogger.
+- Return meaningful result objects instead of throwing exceptions.
+
+3. Logging
+- Use structured logging with ILogger.
+- Log useful context information.
+
+4. Readability
+- Use explicit types instead of `var`.
+- Use meaningful variable and method names.
+- Remove unused code.
+- Reduce nesting where possible.
+
+5. Testability
+- Ensure the code is unit test friendly.
+- Extract logic into methods that can be tested independently.
+- Avoid static dependencies.
+- Use dependency injection.
+
+6. Performance
+- Avoid unnecessary allocations.
+- Avoid repeated database or IO calls.
+
+7. Best Practices
+- Follow .NET 8 conventions.
+- Use async/await correctly.
+- Use cancellation tokens where appropriate.
+- Avoid magic strings and hardcoded values.
+
+8. Refactoring
+- Rewrite the code in a cleaner way while preserving functionality.
+- If needed, create helper methods.
+- Ensure the code is maintainable and production ready.
+
+9. Unit Testing
+- Provide example xUnit test cases for the main logic.
+
+Output format:
+1. List the issues found in the current code.
+2. Provide the fully refactored version of the code.
+3. Provide example xUnit tests.
+4. Explain the improvements briefly.
