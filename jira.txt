@@ -1,3 +1,4 @@
+
 using System.Text.Json;
 
 public static List<FadvAccountConfig> LoadFadvAccountConfigs(
@@ -129,3 +130,18 @@ Output format:
 2. Provide the fully refactored version of the code.
 3. Provide example xUnit tests.
 4. Explain the improvements briefly.
+
+Hi Team,
+
+We are currently working on integrating with the Cisive APIs for our application.
+
+To streamline the development and ensure accurate API implementation, could you please provide the OpenAPI Specification (OAS) / Swagger JSON file for the APIs we are expected to consume?
+
+Having the OAS file will help us:
+	•	Generate API client code automatically
+	•	Validate request and response schemas
+	•	Improve integration accuracy and reduce manual configuration
+
+If available, please share the latest OpenAPI (OAS 3.0 or above) JSON/YAML specification along with any relevant documentation.
+
+Thank you for your support.
