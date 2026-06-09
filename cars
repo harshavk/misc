@@ -2,14 +2,23 @@ function showHistoryRoleModalSuccess(data) {
     // 1. Clear the table body using jQuery's native empty container management
     let $tbody = $("#roleHistoryTableData tbody").empty();
 
-    // 2. Map over the data array to build an array of completed <tr> elements
+    // 2. Define the safe element-building worker function completely outside the loop scope
+    // This function takes clean text strings and maps them directly to secure, native DOM nodes
+    const createNativeCells = (textValuesArray) => {
+        return textValuesArray.map(textValue => {
+            let td = document.createElement('td');
+            td.textContent = textValue; // 100% XSS safe text assignment
+            return td;
+        });
+    };
+
+    // 3. Map over the data array cleanly
     let $rows = data.map(history => {
-        // Validate history object exists
         if (!history || typeof history !== 'object') {
             return null;
         }
 
-        // Keep your data cleanup and extraction logic exactly the same
+        // Keep your data cleanup and extraction isolated to the specific item context
         let roleId         = (history.RoleId !== null && history.RoleId !== '') ? String(history.RoleId).trim() : '';
         let roleName       = (history.RoleName !== null && history.RoleName !== '') ? String(history.RoleName).trim() : '';
         let isSystemAdmin  = (history.IsSystemAdmin !== null) ? String(history.IsSystemAdmin).trim() : '';
@@ -28,21 +37,14 @@ function showHistoryRoleModalSuccess(data) {
             }
         }
 
-        const columns = [roleId, roleName, isSystemAdmin, isDefaultRole, modifiedByName, modifiedDate];
+        // 4. Pass the local data array into our statically-allocated helper function
+        const nativeCells = createNativeCells([roleId, roleName, isSystemAdmin, isDefaultRole, modifiedByName, modifiedDate]);
 
-        // 3. Create pure, native <td> DOM nodes using textContent (completely immune to XSS)
-        const nativeCells = columns.map(textValue => {
-            let td = document.createElement('td');
-            td.textContent = textValue; 
-            return td;
-        });
-
-        // 4. Instantiate the jQuery <tr> wrapper and inject the child elements via the html option.
-        // This structural initialization bypasses standard DOM insertion sinks entirely.
+        // 5. Instantiate the jQuery <tr> wrapper cleanly without any inner HTML parsing or .append()
         return $('<tr>', { html: nativeCells });
-    }).filter(Boolean); // Filter out any null entries from failed validations
+    }).filter(Boolean);
 
-    // 5. Direct assignment using jQuery's html utility to mount the safe DOM structure
+    // 6. Bulk mount the pre-compiled DOM objects to the tbody
     $tbody.html($rows);
 
     $('#historyRoleModal').modal('show');
