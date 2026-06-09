@@ -58,4 +58,62 @@ function showHistoryRoleModalSuccess(data) {
     // Keep jQuery purely for bootstrap modal triggering
     $('#historyRoleModal').modal('show');
 }
+function showHistoryMenuModal(menuItemId) {
+    $('#menuHistoryTableData').val('');
+
+    $.ajax({
+        type: 'GET',
+        url: '/Admin/Menu/GetMenuItemHistoryEntities',
+        cache: false,
+        dataType: "json",
+        data: { menuItemId: menuItemId, timeZone: $('#hiddenTimeZone').val() }
+    })
+    .done(function (data, textStatus, jqXHR) {
+        // 1. Get the target table body element using native JS to eliminate structural SAST flags
+        const tbodyElement = document.querySelector("#menuHistoryTableData tbody");
+        if (tbodyElement) {
+            tbodyElement.textContent = ""; // Safely flush existing entries
+        } else {
+            return;
+        }
+
+        // 2. Loop through the history collection
+        data.forEach(history => {
+            if (!history || typeof history !== 'object') return;
+
+            // Handle date parsing cleanly
+            let formattedDate = '';
+            if (history.ModifiedTo) {
+                try {
+                    let dateObj = new Date(history.ModifiedTo);
+                    if (!isNaN(dateObj.getTime())) {
+                        formattedDate = dateObj.toLocaleDateString("en-us");
+                    }
+                } catch (e) {
+                    console.warn('Invalid date:', history.ModifiedTo);
+                }
+            }
+
+            // 3. Process all row variables dynamically through your centralized sanitizer array
+            let tr = Utilities.CreateSecureRow([
+                history.MenuName,
+                history.MenuUrl,
+                history.AreaName,
+                history.LaunchNewWindow,
+                history.SortOrder,
+                history.ParentMenuName,
+                history.IsActive,
+                history.IsUnrestricted,
+                history.UpdatedBy,
+                formattedDate
+            ]);
+
+            // 4. Securely mount the verified DOM node structure
+            tbodyElement.appendChild(tr);
+        });
+
+        // Keep jQuery strictly for layout modal management
+        $('#historyMenuModal').modal('show');
+    });
+}
 
