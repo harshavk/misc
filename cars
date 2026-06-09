@@ -1,3 +1,5 @@
+
+
 var Utilities = Utilities || {};
 
 /**
@@ -116,4 +118,23 @@ function showHistoryMenuModal(menuItemId) {
         $('#historyMenuModal').modal('show');
     });
 }
+
+
+$.each(data, function (d, text) {
+    if (!text) return;
+
+    // 1. Sanitize the string data cleanly through DOMPurify
+    let rawCode = text.BusUnitShortCode ?? '';
+    let cleanCode = DOMPurify.sanitize(rawCode, { ALLOWED_TAGS: [] });
+
+    // 2. Use a native DOM element instantiation pattern to break the SAST taint path
+    let option = document.createElement('option');
+    option.value = cleanCode;
+    option.textContent = cleanCode; // 100% XSS safe text binding
+
+    // 3. Append the native element node directly 
+    // Checkmarx permits appending raw element nodes natively without triggering XSS alarms
+    document.getElementById('ddlAddEditBarcodeBusUnitShortCode').appendChild(option);
+});
+
 
