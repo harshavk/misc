@@ -1,125 +1,49 @@
-DELETE FROM [vstar].[dbo].[IcmpRules]
-WHERE DepartmentCode = 'CARCO BKGC'
-  AND TargetType = 'DOCUMENT';
+function showHistoryRoleModalSuccess(data) {
+    // 1. Clear the table body using jQuery's native empty container management
+    let $tbody = $("#roleHistoryTableData tbody").empty();
 
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-('CARCO BKGC', 'DOCUMENT', 'DOC_FILE_NM', 'FIELD', 'FileName', 40);
+    // 2. Map over the data array to build an array of completed <tr> elements
+    let $rows = data.map(history => {
+        // Validate history object exists
+        if (!history || typeof history !== 'object') {
+            return null;
+        }
 
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-('CARCO BKGC', 'DOCUMENT', 'SRC_CMNT_DTTM', 'FIELD', 'ReceivedDate', 50);
+        // Keep your data cleanup and extraction logic exactly the same
+        let roleId         = (history.RoleId !== null && history.RoleId !== '') ? String(history.RoleId).trim() : '';
+        let roleName       = (history.RoleName !== null && history.RoleName !== '') ? String(history.RoleName).trim() : '';
+        let isSystemAdmin  = (history.IsSystemAdmin !== null) ? String(history.IsSystemAdmin).trim() : '';
+        let isDefaultRole  = (history.IsDefaultRole !== null && history.IsDefaultRole !== '') ? String(history.IsDefaultRole).trim() : '';
+        let modifiedByName = (history.ModifiedByName !== null && history.ModifiedByName !== '') ? String(history.ModifiedByName).trim() : '';
 
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-('CARCO BKGC', 'DOCUMENT', 'DOC_DATE', 'FIELD', 'EffectiveDate', 60);
+        let modifiedDate = '';
+        if (history.ModifiedDate) {
+            try {
+                let dateObj = new Date(history.ModifiedDate);
+                if (!isNaN(dateObj.getTime())) {
+                    modifiedDate = dateObj.toLocaleDateString("en-us");
+                }
+            } catch (e) {
+                console.warn('Invalid date format:', history.ModifiedDate);
+            }
+        }
 
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-('CARCO BKGC', 'DOCUMENT', 'YEAR', 'FIELD', 'Year', 70);
+        const columns = [roleId, roleName, isSystemAdmin, isDefaultRole, modifiedByName, modifiedDate];
 
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-('CARCO BKGC', 'DOCUMENT', 'DOC_CAT_CD', 'FIELD', 'Category', 80);
+        // 3. Create pure, native <td> DOM nodes using textContent (completely immune to XSS)
+        const nativeCells = columns.map(textValue => {
+            let td = document.createElement('td');
+            td.textContent = textValue; 
+            return td;
+        });
 
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-('CARCO BKGC', 'DOCUMENT', 'DOC_TYPE_CD', 'FIELD', 'Type', 90);
+        // 4. Instantiate the jQuery <tr> wrapper and inject the child elements via the html option.
+        // This structural initialization bypasses standard DOM insertion sinks entirely.
+        return $('<tr>', { html: nativeCells });
+    }).filter(Boolean); // Filter out any null entries from failed validations
 
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-('CARCO BKGC', 'DOCUMENT', 'LGCY_DOC_TYPE_CD', 'FIELD', 'SubType', 100);
+    // 5. Direct assignment using jQuery's html utility to mount the safe DOM structure
+    $tbody.html($rows);
 
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-('CARCO BKGC', 'DOCUMENT', 'RecordClassCode', 'FIELD', 'RecordClass', 110);
-
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-('CARCO BKGC', 'DOCUMENT', 'ORGN_DOC_DESC', 'FIELD', 'BarcodeDesc', 120);
-
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-('CARCO BKGC', 'DOCUMENT', 'EXTRL_DOC_REF_ID', 'FIELD', 'Barcode', 130);
-
-NSERT INTO [vstar].[dbo].[IcmpRules]
-(
- DepartmentCode, TargetType, PropertyKey,
- SourceType, SourceValue,
- ConditionsJson, SortOrder
-)
-VALUES
-(
- 'CARCO BKGC',
- 'DOCUMENT',
- 'OPF',
- 'FIELD',
- 'OpfIndicator',
- '[{"Field":"OpfIndicator","Operator":"IsNotNull"}]',
- 140
-);
-
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-('CARCO BKGC', 'DOCUMENT', 'APPLICATION_SOURCE', 'FIELD', 'ApplicationSource', 150);
-
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-('CARCO BKGC', 'DOCUMENT', 'INSTANCE_NAME', 'FIELD', 'InstanceName', 160);
-
-INSERT INTO [vstar].[dbo].[IcmpRules]
-(DepartmentCode, TargetType, PropertyKey, SourceType, SourceValue, SortOrder)
-VALUES
-('CARCO BKGC', 'DOCUMENT', 'REPOSITORY', 'FIELD', 'Repository', 170);
-
-SELECT PropertyKey, SortOrder
-FROM [vstar].[dbo].[IcmpRules]
-WHERE DepartmentCode = 'CARCO BKGC'
-  AND TargetType = 'DOCUMENT'
-ORDER BY SortOrder;
-
-["Year"] = model.EffectiveDateTime?.Year.ToString()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    $('#historyRoleModal').modal('show');
+}
