@@ -1,140 +1,46 @@
+function feedStateDdl() {
+    try {
+        $.ajax({
+            type: 'GET',
+            url: "/Vstar/Barcode/GetStates",
+            cache: false,
+            dataType: "json"
+        })
+        .done(function (data, textStatus, jqXHR) {
+            if (data) {
+                // 1. Grab the target dropdown container element natively
+                const selectElement = document.getElementById('ddlAddEditBarcodeState');
+                if (!selectElement) return;
 
+                // Clear existing options securely using jQuery or native
+                $(selectElement).empty();
 
-var Utilities = Utilities || {};
+                // 2. Add the placeholder "Select State" option using native nodes
+                let defaultOption = document.createElement('option');
+                defaultOption.value = "";
+                defaultOption.textContent = "Select State";
+                selectElement.appendChild(defaultOption);
 
-/**
- * Safely generates a native <tr> element containing <td> cells, 
- * automatically sanitizing all inputs with DOMPurify.
- * @param {Array} columnsArray - Array of raw cell values (strings, numbers, or HTML)
- * @returns {HTMLTableRowElement} - A clean, safe <tr> DOM node
- */
-Utilities.CreateSecureRow = function(columnsArray) {
-    let tr = document.createElement('tr');
-    
-    columnsArray.forEach(cellValue => {
-        let td = document.createElement('td');
-        
-        // Normalize null/undefined values to clean empty strings
-        let safeValue = (cellValue !== null && cellValue !== undefined) ? String(cellValue).trim() : '';
-        
-        // Cleanse the value through DOMPurify.
-        // This ensures text remains text, and any intentional HTML is stripped of XSS vectors.
-        td.innerHTML = DOMPurify.sanitize(safeValue);
-        
-        tr.appendChild(td);
-    });
-    
-    return tr;
-};
+                // 3. Loop through your response array natively
+                data.forEach(text => {
+                    if (!text) return;
 
-function showHistoryRoleModalSuccess(data) {
-    // 1. Get the target table body using vanilla JS for foolproof security tracing
-    const tbodyElement = document.querySelector("#roleHistoryTableData tbody");
-    if (tbodyElement) {
-        tbodyElement.textContent = ""; // Securely flush existing content
-    } else {
-        return;
-    }
+                    // Cleanse the text source with DOMPurify
+                    let rawStateCode = text.StateCode ?? '';
+                    let cleanStateCode = DOMPurify.sanitize(rawStateCode, { ALLOWED_TAGS: [] });
 
-    // 2. Loop through the rows safely
-    data.forEach(history => {
-        if (!history || typeof history !== 'object') return;
+                    // 4. Create the native option node
+                    let opt = document.createElement('option');
+                    opt.value = cleanStateCode;
+                    opt.textContent = cleanStateCode; // 100% immune to HTML injection execution
 
-        // Process dynamic formatting safely locally
-        let formattedDate = history.ModifiedDate ? new Date(history.ModifiedDate).toLocaleDateString("en-us") : '';
-
-        // 3. Pass all properties as an array straight to the global secure row builder
-        let tr = Utilities.CreateSecureRow([
-            history.RoleId, 
-            history.RoleName, 
-            history.IsSystemAdmin, 
-            history.IsDefaultRole, 
-            history.ModifiedByName, 
-            formattedDate
-        ]);
-
-        // 4. Structurally mount the completed, secure row object
-        tbodyElement.appendChild(tr);
-    });
-
-    // Keep jQuery purely for bootstrap modal triggering
-    $('#historyRoleModal').modal('show');
-}
-function showHistoryMenuModal(menuItemId) {
-    $('#menuHistoryTableData').val('');
-
-    $.ajax({
-        type: 'GET',
-        url: '/Admin/Menu/GetMenuItemHistoryEntities',
-        cache: false,
-        dataType: "json",
-        data: { menuItemId: menuItemId, timeZone: $('#hiddenTimeZone').val() }
-    })
-    .done(function (data, textStatus, jqXHR) {
-        // 1. Get the target table body element using native JS to eliminate structural SAST flags
-        const tbodyElement = document.querySelector("#menuHistoryTableData tbody");
-        if (tbodyElement) {
-            tbodyElement.textContent = ""; // Safely flush existing entries
-        } else {
-            return;
-        }
-
-        // 2. Loop through the history collection
-        data.forEach(history => {
-            if (!history || typeof history !== 'object') return;
-
-            // Handle date parsing cleanly
-            let formattedDate = '';
-            if (history.ModifiedTo) {
-                try {
-                    let dateObj = new Date(history.ModifiedTo);
-                    if (!isNaN(dateObj.getTime())) {
-                        formattedDate = dateObj.toLocaleDateString("en-us");
-                    }
-                } catch (e) {
-                    console.warn('Invalid date:', history.ModifiedTo);
-                }
+                    // 5. Append via structural native DOM placement
+                    selectElement.appendChild(opt);
+                });
             }
-
-            // 3. Process all row variables dynamically through your centralized sanitizer array
-            let tr = Utilities.CreateSecureRow([
-                history.MenuName,
-                history.MenuUrl,
-                history.AreaName,
-                history.LaunchNewWindow,
-                history.SortOrder,
-                history.ParentMenuName,
-                history.IsActive,
-                history.IsUnrestricted,
-                history.UpdatedBy,
-                formattedDate
-            ]);
-
-            // 4. Securely mount the verified DOM node structure
-            tbodyElement.appendChild(tr);
         });
-
-        // Keep jQuery strictly for layout modal management
-        $('#historyMenuModal').modal('show');
-    });
+    }
+    catch (e) {
+        Notify.Error("Couldn't load State List");
+    }
 }
-
-
-$.each(data, function (d, text) {
-    if (!text) return;
-
-    // 1. Sanitize the string data cleanly through DOMPurify
-    let rawCode = text.BusUnitShortCode ?? '';
-    let cleanCode = DOMPurify.sanitize(rawCode, { ALLOWED_TAGS: [] });
-
-    // 2. Use a native DOM element instantiation pattern to break the SAST taint path
-    let option = document.createElement('option');
-    option.value = cleanCode;
-    option.textContent = cleanCode; // 100% XSS safe text binding
-
-    // 3. Append the native element node directly 
-    // Checkmarx permits appending raw element nodes natively without triggering XSS alarms
-    document.getElementById('ddlAddEditBarcodeBusUnitShortCode').appendChild(option);
-});
-
-
