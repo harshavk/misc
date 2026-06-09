@@ -58,3 +58,105 @@ function showHistoryRoleModalSuccess(data) {
     // Keep jQuery just for UI state handling (modals), where it doesn't touch data payload paths
     $('#historyRoleModal').modal('show');
 }
+
+// Add this once globally to fix all files simultaneously
+$.ajaxSetup({
+    dataFilter: function (data, type) {
+        // Only target JSON responses where XSS payloads hide
+        if (type === "json" || !type) {
+            try {
+                // Securely replace dangerous characters inside the raw text stream
+                let sanitizedData = data.replace(/[<>\/\\]/g, function (match) {
+                    const map = {
+                        '<': '&lt;',
+                        '>': '&gt;',
+                        '/': '&#x2F;',
+                        '\\': '&#x5C;'
+                    };
+                    return map[match];
+                });
+                return sanitizedData;
+            } catch (e) {
+                return data; // Fallback if parsing strings fails
+            }
+        }
+        return data;
+    }
+});
+
+$.ajax({
+    type: 'GET',
+    url: '/Admin/Role/GetRoleHistoryEntries',
+    cache: false,
+    dataType: "json",
+    // 1. Declare an explicit sanitizing converter
+    converters: {
+        "text json": function(rawResponse) {
+            // Parse and explicitly clean fields
+            let parsed = JSON.parse(rawResponse);
+            
+            // If it's an array, recursively sanitize text leaves
+            if (Array.isArray(parsed)) {
+                return parsed.map(obj => sanitizeObjectProperties(obj));
+            }
+            return sanitizeObjectProperties(parsed);
+        }
+    },
+    data: { roleId: roleId, timeZone: $('#hiddenTimeZone').val() },
+    success: showHistoryRoleModalSuccess // Receives already-clean data
+});
+
+// Helper function to scrub all object strings dynamically
+function sanitizeObjectProperties(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    for (let key in obj) {
+        if (typeof obj[key] === 'string') {
+            obj[key] = obj[key].replace(/[<>]/g, m => m === '<' ? '&lt;' : '&gt;');
+        }
+    }
+    return obj;
+}
+
+function nativeSanitizeHtml(untrustedHtml) {
+    if (!untrustedHtml) return '';
+
+    // 1. Create an in-memory template element (inert DOM wrapper)
+    const template = document.createElement('template');
+    template.innerHTML = untrustedHtml.trim();
+    const fragment = template.content;
+
+    // 2. Define standard HTML element and attribute blocklists
+    const forbiddenElements = ['SCRIPT', 'IFRAME', 'OBJECT', 'EMBED', 'STYLE', 'LINK'];
+    
+    // 3. Deep-traverse the parsed fragment to purge vulnerabilities
+    const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_ELEMENT);
+    let currentNode = walker.currentNode;
+
+    while (currentNode) {
+        // Remove banned tags completely
+        if (forbiddenElements.includes(currentNode.nodeName)) {
+            const toRemove = currentNode;
+            currentNode = walker.nextNode();
+            toRemove.parentNode.removeChild(toRemove);
+            continue;
+        }
+
+        // Strip inline script handlers (anything starting with "on" like onerror, onclick)
+        // or execution strings containing "javascript:"
+        if (currentNode.attributes) {
+            const attrs = Array.from(currentNode.attributes);
+            for (let attr of attrs) {
+                const attrName = attr.name.toLowerCase();
+                const attrValue = attr.value.toLowerCase();
+
+                if (attrName.startsWith('on') || attrValue.includes('javascript:')) {
+                    currentNode.removeAttribute(attr.name);
+                }
+            }
+        }
+        currentNode = walker.nextNode();
+    }
+
+    // 4. Return the safe, scrubbed HTML string
+    return template.innerHTML;
+}
